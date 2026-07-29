@@ -132,10 +132,10 @@ Optional values:
 | `HTTP_IDLE_TIMEOUT` | `60s` | Keep-alive idle deadline |
 | `SHUTDOWN_TIMEOUT` | `15s` | Graceful shutdown deadline |
 | `READINESS_TIMEOUT` | `2s` | PostgreSQL readiness deadline |
-| `DEVICE_CODE_TTL` | `10m` | Device and OAuth state lifetime |
-| `ACCESS_TOKEN_TTL` | `8h` | Broker access token lifetime |
-| `REFRESH_TOKEN_TTL` | `720h` | Broker refresh token lifetime |
-| `AUTH_POLL_INTERVAL` | `5s` | Client polling interval |
+| `DEVICE_CODE_TTL` | `10m` | Device and OAuth state lifetime; min `1s` |
+| `ACCESS_TOKEN_TTL` | `8h` | Broker access token lifetime; min `1s` |
+| `REFRESH_TOKEN_TTL` | `720h` | Broker refresh lifetime; min `1s` |
+| `AUTH_POLL_INTERVAL` | `5s` | Client polling interval; min `1s` |
 | `UPSTREAM_TIMEOUT` | `30s` | DingTalk API deadline |
 | `DOWNLOAD_TIMEOUT` | `10m` | End-to-end attachment deadline |
 | `DOWNLOAD_MAX_BYTES` | `209715200` | Maximum streamed attachment bytes |

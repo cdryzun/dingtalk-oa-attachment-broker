@@ -134,9 +134,9 @@ func NewService(options Options) (*Service, error) {
 	if strings.TrimSpace(options.CorpID) == "" {
 		return nil, fmt.Errorf("corp ID is required")
 	}
-	if options.DeviceCodeTTL <= 0 || options.AccessTokenTTL <= 0 ||
-		options.RefreshTokenTTL <= 0 || options.PollInterval <= 0 {
-		return nil, fmt.Errorf("authorization durations must be positive")
+	if options.DeviceCodeTTL < time.Second || options.AccessTokenTTL < time.Second ||
+		options.RefreshTokenTTL < time.Second || options.PollInterval < time.Second {
+		return nil, fmt.Errorf("authorization durations must be at least one second")
 	}
 	now := options.Now
 	if now == nil {

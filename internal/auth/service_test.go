@@ -554,6 +554,10 @@ func TestNewServiceValidatesDependenciesAndAppliesDefaultClock(t *testing.T) {
 		{name: "client ID", mutate: func(options *Options) { options.ClientID = "" }},
 		{name: "corp ID", mutate: func(options *Options) { options.CorpID = "" }},
 		{name: "durations", mutate: func(options *Options) { options.PollInterval = 0 }},
+		{name: "subsecond device TTL", mutate: func(options *Options) { options.DeviceCodeTTL = 500 * time.Millisecond }},
+		{name: "subsecond access TTL", mutate: func(options *Options) { options.AccessTokenTTL = 500 * time.Millisecond }},
+		{name: "subsecond refresh TTL", mutate: func(options *Options) { options.RefreshTokenTTL = 500 * time.Millisecond }},
+		{name: "subsecond poll interval", mutate: func(options *Options) { options.PollInterval = 500 * time.Millisecond }},
 	}
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
