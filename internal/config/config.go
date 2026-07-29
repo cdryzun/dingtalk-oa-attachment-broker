@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"net"
+	"net/netip"
 	"net/url"
 	"os"
 	"strconv"
@@ -58,6 +59,7 @@ type Config struct {
 	AuditRetention             time.Duration
 	AuthRecordRetention        time.Duration
 	RequestsPerMinute          int
+	TrustedProxyCIDRs          []netip.Prefix
 	ApprovalSearchConcurrency  int
 	ApprovalSearchRate         int
 	DingTalkClientID           string
@@ -205,6 +207,10 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	trustedProxyCIDRs, err := parseCIDRs("TRUSTED_PROXY_CIDRS", os.Getenv("TRUSTED_PROXY_CIDRS"))
+	if err != nil {
+		return Config{}, err
+	}
 	approvalSearchConcurrency, err := positiveInt(
 		"APPROVAL_SEARCH_CONCURRENCY",
 		defaultApprovalSearchConcurrency,
@@ -245,6 +251,7 @@ func Load() (Config, error) {
 		AuditRetention:             auditRetention,
 		AuthRecordRetention:        authRecordRetention,
 		RequestsPerMinute:          requestsPerMinute,
+		TrustedProxyCIDRs:          trustedProxyCIDRs,
 		ApprovalSearchConcurrency:  approvalSearchConcurrency,
 		ApprovalSearchRate:         approvalSearchRate,
 		DingTalkClientID:           clientID,
@@ -410,6 +417,22 @@ func isLoopbackHost(host string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+func parseCIDRs(key, raw string) ([]netip.Prefix, error) {
+	var result []netip.Prefix
+	for _, part := range strings.Split(raw, ",") {
+		value := strings.TrimSpace(part)
+		if value == "" {
+			continue
+		}
+		prefix, err := netip.ParsePrefix(value)
+		if err != nil {
+			return nil, fmt.Errorf("validate %s: invalid CIDR %q", key, value)
+		}
+		result = append(result, prefix.Masked())
+	}
+	return result, nil
 }
 
 func parseSet(raw string) map[string]struct{} {

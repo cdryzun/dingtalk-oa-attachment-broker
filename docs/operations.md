@@ -15,6 +15,9 @@
 JSON logs include request ID, normalized route, status, duration, and source
 address. Callback query parameters, authorization headers, raw tokens, signed
 URLs, and attachment content are excluded.
+The logged source address and application rate-limit key use the direct peer by
+default. When `TRUSTED_PROXY_CIDRS` is configured, a valid right-to-left
+`X-Forwarded-For` chain from a trusted direct peer supplies the client address.
 
 The public port returns `404` for `/metrics`. Prometheus must reach the private
 listener through a restricted network path. Probe the public `/readyz` endpoint

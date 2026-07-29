@@ -20,6 +20,13 @@ the metrics listener private. A production deployment should run at least two
 Broker replicas when availability matters; all replicas share PostgreSQL but
 keep rate-limit and category caches in memory.
 
+When the reverse proxy changes the TCP source address, set
+`TRUSTED_PROXY_CIDRS` to the proxy-owned CIDRs. The Broker accepts
+`X-Forwarded-For` only from those direct peers and walks the chain from right to
+left to select the first non-proxy address. Configure the proxy to replace or
+append the header. Never trust a CIDR that includes clients able to connect
+directly to the Broker.
+
 ## Prerequisites
 
 - A dedicated PostgreSQL database and role on a supported major version.
@@ -31,6 +38,7 @@ keep rate-limit and category caches in memory.
   [DingTalk application setup](dingtalk-application.md).
 - A secret store for the application credentials, database URL, and token
   pepper.
+- The CIDRs of reverse proxies that may supply `X-Forwarded-For`, when needed.
 
 ## Build the Image
 

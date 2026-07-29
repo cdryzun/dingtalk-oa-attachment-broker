@@ -12,6 +12,7 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strconv"
 	"strings"
@@ -32,6 +33,8 @@ const (
 	defaultRequestsPerMinute = 120
 	requestIDHeader          = "X-Request-ID"
 	problemTypeBaseURL       = "/problems/"
+	maxForwardedForBytes     = 4096
+	maxForwardedForHops      = 32
 )
 
 type AuthService interface {
@@ -76,17 +79,19 @@ type Options struct {
 	Logger            *slog.Logger
 	ReadinessTimeout  time.Duration
 	RequestsPerMinute int
+	TrustedProxyCIDRs []netip.Prefix
 }
 
 type Handler struct {
-	auth             AuthService
-	attachments      AttachmentService
-	approvalSearch   ApprovalSearchService
-	readiness        ReadinessChecker
-	logger           *slog.Logger
-	readinessTimeout time.Duration
-	rateLimiter      *rateLimiter
-	metrics          *metrics
+	auth              AuthService
+	attachments       AttachmentService
+	approvalSearch    ApprovalSearchService
+	readiness         ReadinessChecker
+	logger            *slog.Logger
+	readinessTimeout  time.Duration
+	rateLimiter       *rateLimiter
+	trustedProxyCIDRs []netip.Prefix
+	metrics           *metrics
 }
 
 type requestContextKey string
@@ -120,14 +125,15 @@ func NewHandler(options Options) (*Handler, error) {
 	}
 	registry := prometheus.NewRegistry()
 	return &Handler{
-		auth:             options.Auth,
-		attachments:      options.Attachments,
-		approvalSearch:   options.ApprovalSearch,
-		readiness:        options.Readiness,
-		logger:           logger,
-		readinessTimeout: readinessTimeout,
-		rateLimiter:      newRateLimiter(requestsPerMinute, time.Now),
-		metrics:          newMetrics(registry),
+		auth:              options.Auth,
+		attachments:       options.Attachments,
+		approvalSearch:    options.ApprovalSearch,
+		readiness:         options.Readiness,
+		logger:            logger,
+		readinessTimeout:  readinessTimeout,
+		rateLimiter:       newRateLimiter(requestsPerMinute, time.Now),
+		trustedProxyCIDRs: append([]netip.Prefix(nil), options.TrustedProxyCIDRs...),
+		metrics:           newMetrics(registry),
 	}, nil
 }
 
@@ -146,8 +152,9 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 
 	statusResponse := &statusResponseWriter{ResponseWriter: response}
 	route := routeLabel(request.URL.Path)
+	sourceAddress := handler.clientAddress(request)
 
-	if shouldRateLimit(request.URL.Path) && !handler.rateLimiter.Allow(clientAddress(request)) {
+	if shouldRateLimit(request.URL.Path) && !handler.rateLimiter.Allow(sourceAddress) {
 		writeProblem(statusResponse, request, domain.ErrRateLimited)
 	} else {
 		handler.route(statusResponse, request)
@@ -166,7 +173,7 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 		"route", route,
 		"status", statusResponse.status,
 		"durationMs", duration.Milliseconds(),
-		"remoteAddress", clientAddress(request),
+		"remoteAddress", sourceAddress,
 	)
 }
 
@@ -1070,12 +1077,51 @@ func shouldRateLimit(path string) bool {
 	return path != "/healthz" && path != "/readyz"
 }
 
-func clientAddress(request *http.Request) string {
-	host, _, err := net.SplitHostPort(request.RemoteAddr)
+func (handler *Handler) clientAddress(request *http.Request) string {
+	directAddress := directClientAddress(request.RemoteAddr)
+	peer, err := netip.ParseAddr(directAddress)
+	if err != nil || !containsAddress(handler.trustedProxyCIDRs, peer.Unmap()) {
+		return directAddress
+	}
+
+	forwarded := strings.Join(request.Header.Values("X-Forwarded-For"), ",")
+	if forwarded == "" || len(forwarded) > maxForwardedForBytes {
+		return directAddress
+	}
+	chain := strings.Split(forwarded, ",")
+	if len(chain) > maxForwardedForHops {
+		return directAddress
+	}
+
+	client := peer.Unmap()
+	for index := len(chain) - 1; index >= 0; index-- {
+		address, parseErr := netip.ParseAddr(strings.TrimSpace(chain[index]))
+		if parseErr != nil {
+			return directAddress
+		}
+		client = address.Unmap()
+		if !containsAddress(handler.trustedProxyCIDRs, client) {
+			return client.String()
+		}
+	}
+	return client.String()
+}
+
+func directClientAddress(remoteAddress string) string {
+	host, _, err := net.SplitHostPort(remoteAddress)
 	if err == nil {
 		return host
 	}
-	return request.RemoteAddr
+	return remoteAddress
+}
+
+func containsAddress(prefixes []netip.Prefix, address netip.Addr) bool {
+	for _, prefix := range prefixes {
+		if prefix.Contains(address) {
+			return true
+		}
+	}
+	return false
 }
 
 func errorCode(err error) string {

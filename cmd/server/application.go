@@ -106,6 +106,7 @@ func productionApplication(
 		Logger:            logger,
 		ReadinessTimeout:  cfg.ReadinessTimeout,
 		RequestsPerMinute: cfg.RequestsPerMinute,
+		TrustedProxyCIDRs: cfg.TrustedProxyCIDRs,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create HTTP handler: %w", err)

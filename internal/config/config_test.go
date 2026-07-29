@@ -1,6 +1,8 @@
 package config
 
 import (
+	"net/netip"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -26,6 +28,7 @@ func TestLoadUsesSecureDefaults(t *testing.T) {
 	t.Setenv("APPROVAL_SEARCH_CONCURRENCY", "")
 	t.Setenv("APPROVAL_SEARCH_REQUESTS_PER_MINUTE", "")
 	t.Setenv("DINGTALK_ADMIN_USER_IDS", " admin-1,admin-2,admin-1 ")
+	t.Setenv("TRUSTED_PROXY_CIDRS", "")
 
 	got, err := Load()
 	if err != nil {
@@ -53,6 +56,9 @@ func TestLoadUsesSecureDefaults(t *testing.T) {
 		t.Errorf("PublicBaseURL = %q; want %q", got.PublicBaseURL, "https://broker.example.com")
 	}
 	if len(got.AdminUserIDs) != 2 {
+		if len(got.TrustedProxyCIDRs) != 0 {
+			t.Errorf("TrustedProxyCIDRs = %v; want empty", got.TrustedProxyCIDRs)
+		}
 		t.Fatalf("AdminUserIDs length = %d; want 2", len(got.AdminUserIDs))
 	}
 	if _, ok := got.AdminUserIDs["admin-1"]; !ok {
@@ -79,6 +85,7 @@ func TestLoadReadsEnvironment(t *testing.T) {
 	t.Setenv("REQUESTS_PER_MINUTE", "60")
 	t.Setenv("APPROVAL_SEARCH_CONCURRENCY", "3")
 	t.Setenv("APPROVAL_SEARCH_REQUESTS_PER_MINUTE", "8")
+	t.Setenv("TRUSTED_PROXY_CIDRS", "10.0.0.0/8, 2001:db8::/32")
 
 	got, err := Load()
 	if err != nil {
@@ -102,6 +109,13 @@ func TestLoadReadsEnvironment(t *testing.T) {
 	assertEqual(t, got.RequestsPerMinute, 60)
 	assertEqual(t, got.ApprovalSearchConcurrency, 3)
 	assertEqual(t, got.ApprovalSearchRate, 8)
+	wantTrustedProxies := []netip.Prefix{
+		netip.MustParsePrefix("10.0.0.0/8"),
+		netip.MustParsePrefix("2001:db8::/32"),
+	}
+	if !slices.Equal(got.TrustedProxyCIDRs, wantTrustedProxies) {
+		t.Errorf("TrustedProxyCIDRs = %v; want %v", got.TrustedProxyCIDRs, wantTrustedProxies)
+	}
 }
 
 func TestLoadAllowsLoopbackHTTPForLocalDevelopment(t *testing.T) {
@@ -143,6 +157,7 @@ func TestLoadRejectsInvalidConfiguration(t *testing.T) {
 		{name: "invalid request rate", key: "REQUESTS_PER_MINUTE", value: "0", wantError: "REQUESTS_PER_MINUTE"},
 		{name: "invalid search concurrency", key: "APPROVAL_SEARCH_CONCURRENCY", value: "21", wantError: "APPROVAL_SEARCH_CONCURRENCY"},
 		{name: "invalid search rate", key: "APPROVAL_SEARCH_REQUESTS_PER_MINUTE", value: "0", wantError: "APPROVAL_SEARCH_REQUESTS_PER_MINUTE"},
+		{name: "invalid trusted proxy CIDR", key: "TRUSTED_PROXY_CIDRS", value: "10.0.0.1", wantError: "TRUSTED_PROXY_CIDRS"},
 	}
 
 	for _, tt := range tests {
@@ -173,6 +188,7 @@ func setValidEnvironment(t *testing.T) {
 		"DATABASE_URL":            "postgres://broker:password@localhost:5432/broker?sslmode=disable",
 		"TOKEN_PEPPER":            strings.Repeat("p", 32),
 		"DINGTALK_ADMIN_USER_IDS": "",
+		"TRUSTED_PROXY_CIDRS":     "",
 	}
 	for key, value := range values {
 		t.Setenv(key, value)

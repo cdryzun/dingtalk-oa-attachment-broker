@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"strings"
 	"testing"
 	"time"
@@ -66,6 +67,84 @@ func TestMetricsAreServedOnlyByDedicatedHandler(t *testing.T) {
 	metricsProvider.MetricsHandler().ServeHTTP(response, request)
 	if response.Code != http.StatusNotFound {
 		t.Fatalf("internal /missing status = %d; want 404", response.Code)
+	}
+}
+
+func TestRateLimitUsesForwardedClientOnlyForTrustedProxy(t *testing.T) {
+	tests := []struct {
+		name           string
+		trustedProxies []netip.Prefix
+		wantStatuses   []int
+	}{
+		{
+			name:           "trusted proxy",
+			trustedProxies: []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")},
+			wantStatuses:   []int{http.StatusNotFound, http.StatusNotFound, http.StatusTooManyRequests},
+		},
+		{
+			name:         "untrusted proxy",
+			wantStatuses: []int{http.StatusNotFound, http.StatusTooManyRequests, http.StatusTooManyRequests},
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			handler, err := NewHandler(Options{
+				Auth:              &fakeAuthService{},
+				Attachments:       &fakeAttachmentService{},
+				ApprovalSearch:    &fakeApprovalSearchService{},
+				Readiness:         fakeReadiness{},
+				TrustedProxyCIDRs: testCase.trustedProxies,
+				RequestsPerMinute: 1,
+				ReadinessTimeout:  time.Second,
+			})
+			if err != nil {
+				t.Fatalf("NewHandler() error = %v", err)
+			}
+
+			forwardedClients := []string{"198.51.100.10", "198.51.100.11", "198.51.100.10"}
+			for index, forwardedClient := range forwardedClients {
+				request := httptest.NewRequest(http.MethodGet, "/missing", nil)
+				request.RemoteAddr = "10.0.0.2:12345"
+				request.Header.Set("X-Forwarded-For", forwardedClient)
+				response := httptest.NewRecorder()
+
+				handler.ServeHTTP(response, request)
+
+				if response.Code != testCase.wantStatuses[index] {
+					t.Errorf("request %d status = %d; want %d", index, response.Code, testCase.wantStatuses[index])
+				}
+			}
+		})
+	}
+}
+
+func TestClientAddressRejectsInvalidForwardedChain(t *testing.T) {
+	handler := &Handler{
+		trustedProxyCIDRs: []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")},
+	}
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	request.RemoteAddr = "10.0.0.2:12345"
+	request.Header.Set("X-Forwarded-For", "198.51.100.10, invalid")
+
+	if got := handler.clientAddress(request); got != "10.0.0.2" {
+		t.Errorf("clientAddress() = %q; want direct peer", got)
+	}
+}
+
+func TestClientAddressUsesRightmostUntrustedForwardedHop(t *testing.T) {
+	handler := &Handler{
+		trustedProxyCIDRs: []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")},
+	}
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	request.RemoteAddr = "10.0.0.2:12345"
+	request.Header.Set(
+		"X-Forwarded-For",
+		"203.0.113.7, 198.51.100.10, 10.0.0.3",
+	)
+
+	if got := handler.clientAddress(request); got != "198.51.100.10" {
+		t.Errorf("clientAddress() = %q; want rightmost untrusted hop", got)
 	}
 }
 

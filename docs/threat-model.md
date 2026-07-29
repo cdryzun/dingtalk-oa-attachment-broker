@@ -43,7 +43,8 @@ flowchart LR
 | Oversized stream | Length check, byte cap, and timeout |
 | Response header injection | Filename and disposition sanitization |
 | Secret leakage in logs | Stable error classes and path-only request logging |
-| Public telemetry disclosure | Private listener and scoped NetworkPolicy |
+| Forwarded address spoofing | Trust headers only from configured proxy CIDRs |
+| Public telemetry disclosure | Private listener and restricted network path |
 | Expired credential metadata growth | Bounded expired-record retention |
 | Audit bypass | Allowed responses fail closed when audit insertion fails |
 | Runtime privilege escalation | Restricted container security context |
@@ -57,15 +58,14 @@ fail closed and require the client to restart the read-only query.
   Unknown structures fail closed but may require a reviewed parser update.
 - Per-source request limiting is local to each replica. Ingress or gateway
   limits remain necessary for distributed denial-of-service protection.
-- A compromised Kubernetes node or secret authority can access runtime
-  credentials. Platform hardening and secret rotation remain required.
+- A compromised runtime host or secret authority can access credentials.
+  Platform hardening and secret rotation remain required.
 - An authorized user can copy downloaded attachment content. The broker
   controls access, not downstream data handling.
 - DingTalk does not permit list discovery beyond its historical time limit.
   Older approvals require an already known `processInstanceId`.
-- The public tunnel is a single external transport path. Blackbox monitoring
-  detects failure, but tunnel high availability requires a separately
-  validated multi-client topology.
+- TLS proxy and public routing availability are deployment controls. Monitor the
+  external `/readyz` path separately from the process and database probes.
 - PostgreSQL transport encryption, backups, point-in-time recovery, and major
   version lifecycle are platform controls. A PostgreSQL 12 exception remains
   a security risk until the database is upgraded.

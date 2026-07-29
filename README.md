@@ -141,6 +141,7 @@ Optional values:
 | `DOWNLOAD_MAX_BYTES` | `209715200` | Maximum streamed attachment bytes |
 | `DOWNLOAD_CONCURRENCY_PER_USER` | `5` | Active streams allowed per user |
 | `REQUESTS_PER_MINUTE` | `120` | Per-replica, per-source request limit |
+| `TRUSTED_PROXY_CIDRS` | empty | Proxies allowed to supply client addresses |
 | `AUDIT_RETENTION` | `4320h` | Audit retention interval |
 | `AUTH_RECORD_RETENTION` | `168h` | Expired authentication record retention |
 | `APPROVAL_SEARCH_CONCURRENCY` | `4` | Concurrent candidate detail checks |
@@ -154,6 +155,11 @@ Optional values:
 change like an application permission change. The public listener does not
 serve `/metrics`; production monitoring must reach `METRICS_ADDRESS` through a
 private network path.
+
+Forwarded client addresses are ignored unless the direct peer is covered by
+`TRUSTED_PROXY_CIDRS`. Configure only proxy-owned CIDRs and make the proxy append
+or replace `X-Forwarded-For`; never trust a network that clients can reach
+directly.
 
 ## Verification
 
