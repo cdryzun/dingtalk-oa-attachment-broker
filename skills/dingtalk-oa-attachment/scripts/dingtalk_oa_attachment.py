@@ -1072,18 +1072,28 @@ def _optional_secret(value: Optional[str]) -> Optional[str]:
     return stripped or None
 
 
+def _normalized_origin(
+    parsed: urllib.parse.SplitResult,
+) -> Tuple[str, str, Optional[int]]:
+    scheme = parsed.scheme.lower()
+    port = parsed.port
+    if port is None:
+        port = {"http": 80, "https": 443}.get(scheme)
+    return scheme, (parsed.hostname or "").lower(), port
+
+
 def _validate_verification_url(value: str, broker_url: str) -> str:
     try:
         parsed = urllib.parse.urlsplit(value)
         broker = urllib.parse.urlsplit(broker_url)
+        origins_match = _normalized_origin(parsed) == _normalized_origin(broker)
     except ValueError:
         raise ClientError(
             "invalid_response",
             "Broker returned an unsafe verification URL.",
         ) from None
     if (
-        parsed.scheme != broker.scheme
-        or parsed.netloc != broker.netloc
+        not origins_match
         or parsed.path != "/auth/dingtalk/start"
         or parsed.username
         or parsed.password

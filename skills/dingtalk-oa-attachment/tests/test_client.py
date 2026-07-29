@@ -831,6 +831,44 @@ def test_login_rejects_cross_origin_verification_url() -> None:
     assert captured.value.code == "invalid_response"
 
 
+@pytest.mark.parametrize(
+    ("broker_url", "verification_url"),
+    [
+        (
+            "https://BROKER.EXAMPLE",
+            "https://broker.example/auth/dingtalk/start?user_code=ABCD-EFGH",
+        ),
+        (
+            "https://broker.example:443",
+            "https://broker.example/auth/dingtalk/start?user_code=ABCD-EFGH",
+        ),
+        (
+            "https://broker.example",
+            "https://broker.example:443/auth/dingtalk/start?user_code=ABCD-EFGH",
+        ),
+        (
+            "http://LOCALHOST:80",
+            "http://localhost/auth/dingtalk/start?user_code=ABCD-EFGH",
+        ),
+    ],
+)
+def test_verification_url_accepts_equivalent_origin_spellings(
+    broker_url: str,
+    verification_url: str,
+) -> None:
+    assert CLIENT._validate_verification_url(verification_url, broker_url) == verification_url
+
+
+def test_verification_url_rejects_different_effective_port() -> None:
+    with pytest.raises(CLIENT.ClientError) as captured:
+        CLIENT._validate_verification_url(
+            "https://broker.example/auth/dingtalk/start?user_code=ABCD-EFGH",
+            "https://broker.example:8443",
+        )
+
+    assert captured.value.code == "invalid_response"
+
+
 def test_download_is_atomic_private_and_reports_sha256(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
