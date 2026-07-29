@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/sync/singleflight"
+
 	"github.com/cdryzun/dingtalk-oa-attachment-broker/internal/domain"
 )
 
@@ -29,22 +31,33 @@ func (service *Service) visibleCatalog(
 		return categories, nil
 	}
 
-	value, err, _ := service.catalogLoads.Do(cacheKey, func() (any, error) {
+	resultChannel := service.catalogLoads.DoChan(cacheKey, func() (any, error) {
+		loadContext, cancel := context.WithTimeout(
+			context.Background(),
+			visibleCatalogLoadTimeout,
+		)
+		defer cancel()
 		refreshTime := service.now().UTC()
 		if categories, ok := service.cachedVisibleCatalog(cacheKey, refreshTime); ok {
 			return categories, nil
 		}
-		categories, err := service.fetchVisibleCatalog(ctx, user)
+		categories, err := service.fetchVisibleCatalog(loadContext, user)
 		if err != nil {
 			return nil, err
 		}
 		service.storeVisibleCatalog(cacheKey, categories, refreshTime)
 		return categories, nil
 	})
-	if err != nil {
-		return nil, err
+	var result singleflight.Result
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case result = <-resultChannel:
 	}
-	categories, ok := value.([]domain.ApprovalCategory)
+	if result.Err != nil {
+		return nil, result.Err
+	}
+	categories, ok := result.Val.([]domain.ApprovalCategory)
 	if !ok {
 		return nil, fmt.Errorf("%w: visible approval catalog cache is invalid", domain.ErrUnavailable)
 	}

@@ -104,7 +104,7 @@ func TestDeniedSearchAuditSurvivesRequestCancellation(t *testing.T) {
 	user := domain.User{CorpID: "corp", UserID: "authorized"}
 	requestContext := context.WithValue(context.Background(), auditContextKey{}, "trace-value")
 	requestContext, cancel := context.WithCancel(requestContext)
-	cancel()
+	provider.approvalHook = cancel
 
 	_, err := service.Search(
 		requestContext,
@@ -281,6 +281,43 @@ func TestSearchLegacyCursorRestartsWithoutReusingPaginationPosition(t *testing.T
 	}
 	if len(provider.snapshotQueries()) != 0 {
 		t.Errorf("legacy cursor must be rejected before querying DingTalk")
+	}
+}
+
+func TestSearchCursorPreservesExactHistoryBoundary(t *testing.T) {
+	originalNow := searchNow
+	defer func() { searchNow = originalNow }()
+	oldest := searchNow.Add(-maxSearchHistory)
+	end := oldest.Add(maxSearchRange)
+	provider := &fakeProvider{
+		pages: map[string]domain.ApprovalInstanceIDPage{
+			"PROC-DIRECT": {NextToken: int64Pointer(5)},
+		},
+	}
+	service := newTestService(t, provider, &recordingAudit{})
+	user := domain.User{CorpID: "corp", UserID: "user"}
+	first, err := service.Search(
+		context.Background(),
+		user,
+		SearchQuery{
+			CategoryID:    service.categoryID(user, "PROC-DIRECT"),
+			CreatedAfter:  &oldest,
+			CreatedBefore: &end,
+			Limit:         10,
+		},
+		"first",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	searchNow = searchNow.Add(time.Second)
+	if _, err := service.Search(
+		context.Background(),
+		user,
+		SearchQuery{CategoryID: first.CategoryID, Cursor: first.NextCursor, Limit: 10},
+		"second",
+	); err != nil {
+		t.Fatalf("cursor continuation error = %v", err)
 	}
 }
 
@@ -656,6 +693,7 @@ type fakeProvider struct {
 	approvals       map[string]domain.Approval
 	errors          map[string]error
 	queries         []domain.ApprovalInstanceIDQuery
+	approvalHook    func()
 }
 
 func (fake *fakeProvider) ListVisibleApprovalTemplates(
@@ -689,11 +727,17 @@ func (fake *fakeProvider) Approval(
 	processInstanceID string,
 ) (domain.Approval, error) {
 	fake.mu.Lock()
-	defer fake.mu.Unlock()
-	if err := fake.errors[processInstanceID]; err != nil {
+	hook := fake.approvalHook
+	err := fake.errors[processInstanceID]
+	approval := fake.approvals[processInstanceID]
+	fake.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
+	if err != nil {
 		return domain.Approval{}, err
 	}
-	return fake.approvals[processInstanceID], nil
+	return approval, nil
 }
 
 func (fake *fakeProvider) totalRequested() int {

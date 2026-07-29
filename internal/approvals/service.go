@@ -19,19 +19,20 @@ import (
 )
 
 const (
-	DefaultSearchPageSize    = 20
-	MinSearchPageSize        = 10
-	categoryPageSize         = 100
-	visibleTemplatePageSize  = 100
-	maxVisibleTemplatePages  = 100
-	maxVisibleTemplates      = 5000
-	visibleCatalogCacheTTL   = time.Minute
-	maxVisibleCatalogEntries = 1024
-	maxKeywordRunes          = 100
-	maxSearchRange           = 120 * 24 * time.Hour
-	maxSearchHistory         = 365 * 24 * time.Hour
-	searchClockSkew          = time.Minute
-	auditWriteTimeout        = 5 * time.Second
+	DefaultSearchPageSize     = 20
+	MinSearchPageSize         = 10
+	categoryPageSize          = 100
+	visibleTemplatePageSize   = 100
+	maxVisibleTemplatePages   = 100
+	maxVisibleTemplates       = 5000
+	visibleCatalogCacheTTL    = time.Minute
+	visibleCatalogLoadTimeout = 30 * time.Second
+	maxVisibleCatalogEntries  = 1024
+	maxKeywordRunes           = 100
+	maxSearchRange            = 120 * 24 * time.Hour
+	maxSearchHistory          = 365 * 24 * time.Hour
+	searchClockSkew           = time.Minute
+	auditWriteTimeout         = 5 * time.Second
 )
 
 type Provider interface {
@@ -374,7 +375,7 @@ func (service *Service) searchState(
 		if err := validateTimeRange(
 			time.UnixMilli(state.StartMS),
 			time.UnixMilli(state.EndMS),
-			now,
+			time.Unix(state.IssuedAt, 0).UTC(),
 		); err != nil {
 			return cursorState{}, err
 		}

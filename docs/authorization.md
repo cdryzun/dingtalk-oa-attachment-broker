@@ -54,8 +54,8 @@ signed URL.
 
 ## Audit decisions
 
-Each returned search result, current-user category discovery candidate, denied
-candidate, list authorization, or download authorization records:
+Each returned search result, denied candidate, list authorization, or download
+authorization records:
 
 - enterprise actor `userId`;
 - action;

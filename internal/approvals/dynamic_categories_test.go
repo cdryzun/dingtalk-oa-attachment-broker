@@ -6,11 +6,50 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/cdryzun/dingtalk-oa-attachment-broker/internal/domain"
 )
+
+func TestVisibleCatalogOwnerCancellationDoesNotFailOtherCallers(t *testing.T) {
+	provider := &blockingCatalogProvider{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	service := newTestService(t, provider, &recordingAudit{})
+	user := domain.User{CorpID: "corp", UserID: "user"}
+	ownerContext, cancelOwner := context.WithCancel(context.Background())
+	ownerResult := make(chan error, 1)
+	go func() {
+		_, err := service.VisibleCategories(ownerContext, user, CategoryDiscoveryQuery{}, "owner")
+		ownerResult <- err
+	}()
+	<-provider.started
+	cancelOwner()
+	if err := <-ownerResult; !errors.Is(err, context.Canceled) {
+		t.Fatalf("owner VisibleCategories() error = %v; want canceled", err)
+	}
+
+	liveResult := make(chan error, 1)
+	go func() {
+		_, err := service.VisibleCategories(
+			context.Background(),
+			user,
+			CategoryDiscoveryQuery{},
+			"live",
+		)
+		liveResult <- err
+	}()
+	close(provider.release)
+	if err := <-liveResult; err != nil {
+		t.Fatalf("live VisibleCategories() error = %v", err)
+	}
+	if provider.calls.Load() != 1 {
+		t.Errorf("catalog loads = %d; want 1", provider.calls.Load())
+	}
+}
 
 func TestVisibleCategoriesComeFromCurrentUsersTemplateCatalog(t *testing.T) {
 	provider := &fakeProvider{
@@ -361,4 +400,41 @@ func newDynamicTestService(
 		t.Fatalf("NewService() error = %v", err)
 	}
 	return service
+}
+
+type blockingCatalogProvider struct {
+	calls   atomic.Int32
+	started chan struct{}
+	release chan struct{}
+}
+
+func (provider *blockingCatalogProvider) ListVisibleApprovalTemplates(
+	ctx context.Context,
+	_ domain.VisibleApprovalTemplateQuery,
+) (domain.VisibleApprovalTemplatePage, error) {
+	if provider.calls.Add(1) == 1 {
+		close(provider.started)
+	}
+	select {
+	case <-ctx.Done():
+		return domain.VisibleApprovalTemplatePage{}, ctx.Err()
+	case <-provider.release:
+		return domain.VisibleApprovalTemplatePage{
+			Templates: []domain.VisibleApprovalTemplate{{
+				ProcessCode: "PROC-DIRECT",
+				Name:        "Approval",
+			}},
+		}, nil
+	}
+}
+
+func (*blockingCatalogProvider) ListApprovalInstanceIDs(
+	context.Context,
+	domain.ApprovalInstanceIDQuery,
+) (domain.ApprovalInstanceIDPage, error) {
+	return domain.ApprovalInstanceIDPage{}, nil
+}
+
+func (*blockingCatalogProvider) Approval(context.Context, string) (domain.Approval, error) {
+	return domain.Approval{}, nil
 }
