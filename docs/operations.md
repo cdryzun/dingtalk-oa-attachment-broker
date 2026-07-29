@@ -40,6 +40,8 @@ include display names, attachment filenames, raw errors, authorization
 headers, tokens, signed URLs, URL query strings, or attachment content. Use
 `requestId` to correlate a business event with the normalized HTTP access log
 and the PostgreSQL audit event.
+Audit writes retain request context values but use a detached five-second
+deadline, so a client disconnect cannot cancel a security decision record.
 
 Recommended alerts:
 

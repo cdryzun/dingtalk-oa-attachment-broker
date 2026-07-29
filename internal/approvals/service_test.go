@@ -12,6 +12,8 @@ import (
 	"github.com/cdryzun/dingtalk-oa-attachment-broker/internal/domain"
 )
 
+type auditContextKey struct{}
+
 var searchNow = time.Date(2026, 7, 18, 10, 0, 0, 0, time.UTC)
 
 func TestSearchFiltersByAuthorizationAndAttachmentPresence(t *testing.T) {
@@ -87,6 +89,43 @@ func TestSearchFiltersByAuthorizationAndAttachmentPresence(t *testing.T) {
 		decisions["firmware"] != domain.AuditDecisionAllowed ||
 		decisions["direct-outsider"] != domain.AuditDecisionDenied {
 		t.Errorf("audit decisions = %#v", decisions)
+	}
+}
+
+func TestDeniedSearchAuditSurvivesRequestCancellation(t *testing.T) {
+	provider := &fakeProvider{
+		pages: map[string]domain.ApprovalInstanceIDPage{
+			"PROC-DIRECT": {ProcessInstanceIDs: []string{"failed"}},
+		},
+		errors: map[string]error{"failed": domain.ErrUpstream},
+	}
+	audit := &recordingAudit{}
+	service := newTestService(t, provider, audit)
+	user := domain.User{CorpID: "corp", UserID: "authorized"}
+	requestContext := context.WithValue(context.Background(), auditContextKey{}, "trace-value")
+	requestContext, cancel := context.WithCancel(requestContext)
+	cancel()
+
+	_, err := service.Search(
+		requestContext,
+		user,
+		SearchQuery{CategoryID: service.categoryID(user, "PROC-DIRECT"), Limit: 10},
+		"request-id",
+	)
+	if !errors.Is(err, domain.ErrUpstream) {
+		t.Fatalf("Search() error = %v; want upstream error", err)
+	}
+	if audit.decisions()["failed"] != domain.AuditDecisionDenied {
+		t.Fatalf("audit events = %#v; want denied event", audit.events)
+	}
+	if audit.contextErr != nil {
+		t.Errorf("audit context error at write = %v", audit.contextErr)
+	}
+	if audit.contextValue != "trace-value" {
+		t.Errorf("audit context value = %#v", audit.contextValue)
+	}
+	if remaining := time.Until(audit.deadline); remaining <= 0 || remaining > 5*time.Second {
+		t.Errorf("audit deadline remaining = %v; want within 5s", remaining)
 	}
 }
 
@@ -674,17 +713,26 @@ func (fake *fakeProvider) snapshotQueries() []domain.ApprovalInstanceIDQuery {
 }
 
 type recordingAudit struct {
-	mu     sync.Mutex
-	events []domain.AuditEvent
-	err    error
+	mu           sync.Mutex
+	events       []domain.AuditEvent
+	err          error
+	contextErr   error
+	contextValue any
+	deadline     time.Time
 }
 
 func (audit *recordingAudit) RecordAudit(
-	_ context.Context,
+	ctx context.Context,
 	event domain.AuditEvent,
 ) error {
 	audit.mu.Lock()
 	defer audit.mu.Unlock()
+	audit.contextErr = ctx.Err()
+	audit.contextValue = ctx.Value(auditContextKey{})
+	audit.deadline, _ = ctx.Deadline()
+	if audit.contextErr != nil {
+		return audit.contextErr
+	}
 	if audit.err != nil {
 		return audit.err
 	}

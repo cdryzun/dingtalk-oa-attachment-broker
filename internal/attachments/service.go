@@ -15,6 +15,8 @@ import (
 	"github.com/cdryzun/dingtalk-oa-attachment-broker/internal/domain"
 )
 
+const auditWriteTimeout = 5 * time.Second
+
 type ApprovalProvider interface {
 	Approval(context.Context, string) (domain.Approval, error)
 	DownloadURL(context.Context, string, string) (*url.URL, error)
@@ -224,7 +226,9 @@ func (service *Service) allow(
 	fileID string,
 	requestID string,
 ) error {
-	if err := service.audit.RecordAudit(ctx, domain.AuditEvent{
+	auditContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), auditWriteTimeout)
+	defer cancel()
+	if err := service.audit.RecordAudit(auditContext, domain.AuditEvent{
 		RequestID:         requestID,
 		CorpID:            user.CorpID,
 		ActorUserID:       user.UserID,
@@ -248,7 +252,9 @@ func (service *Service) deny(
 	requestID string,
 	cause error,
 ) error {
-	auditError := service.audit.RecordAudit(ctx, domain.AuditEvent{
+	auditContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), auditWriteTimeout)
+	defer cancel()
+	auditError := service.audit.RecordAudit(auditContext, domain.AuditEvent{
 		RequestID:          requestID,
 		CorpID:             user.CorpID,
 		ActorUserID:        user.UserID,

@@ -47,7 +47,7 @@ flowchart LR
 | Forwarded address spoofing | Trust headers only from configured proxy CIDRs |
 | Public telemetry disclosure | Private listener and restricted network path |
 | Expired credential metadata growth | Bounded expired-record retention |
-| Audit bypass | Allowed responses fail closed when audit insertion fails |
+| Audit bypass | Detached bounded writes; allowed responses fail closed |
 | Runtime privilege escalation | Restricted container security context |
 
 Current cursors bind the subject, query, and category. Older cursor versions

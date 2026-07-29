@@ -16,6 +16,8 @@ import (
 	"github.com/cdryzun/dingtalk-oa-attachment-broker/internal/domain"
 )
 
+type auditContextKey struct{}
+
 func TestListAllowsOnlyApprovalParticipantsAndAdministrators(t *testing.T) {
 	approval := testApproval()
 	testCases := []struct {
@@ -98,6 +100,42 @@ func TestDownloadRevalidatesAttachmentMembershipBeforeGrant(t *testing.T) {
 	}
 	if len(audit.events) != 1 || audit.events[0].Decision != domain.AuditDecisionDenied {
 		t.Errorf("audit events = %#v", audit.events)
+	}
+}
+
+func TestDeniedAuditSurvivesRequestCancellation(t *testing.T) {
+	audit := &recordingAuditRepository{}
+	service := NewService(Options{
+		Approvals:           &fakeApprovalProvider{approvalError: domain.ErrUpstream},
+		Downloader:          &fakeDownloader{},
+		Audit:               audit,
+		DownloadConcurrency: 1,
+		Now:                 fixedNow,
+	})
+	requestContext := context.WithValue(context.Background(), auditContextKey{}, "trace-value")
+	requestContext, cancel := context.WithCancel(requestContext)
+	cancel()
+
+	_, err := service.List(
+		requestContext,
+		domain.User{CorpID: "corp-id", UserID: "user-id"},
+		"instance-id",
+		"request-id",
+	)
+	if !errors.Is(err, domain.ErrUpstream) {
+		t.Fatalf("List() error = %v; want upstream error", err)
+	}
+	if len(audit.events) != 1 || audit.events[0].Decision != domain.AuditDecisionDenied {
+		t.Fatalf("audit events = %#v; want one denied event", audit.events)
+	}
+	if audit.contextErr != nil {
+		t.Errorf("audit context error at write = %v", audit.contextErr)
+	}
+	if audit.contextValue != "trace-value" {
+		t.Errorf("audit context value = %#v", audit.contextValue)
+	}
+	if remaining := time.Until(audit.deadline); remaining <= 0 || remaining > 5*time.Second {
+		t.Errorf("audit deadline remaining = %v; want within 5s", remaining)
 	}
 }
 
@@ -552,9 +590,12 @@ func (fake *fakeDownloader) Open(ctx context.Context, downloadURL *url.URL) (*Do
 }
 
 type recordingAuditRepository struct {
-	mu     sync.Mutex
-	events []domain.AuditEvent
-	err    error
+	mu           sync.Mutex
+	events       []domain.AuditEvent
+	err          error
+	contextErr   error
+	contextValue any
+	deadline     time.Time
 }
 
 type trackingBody struct {
@@ -568,11 +609,17 @@ func (body *trackingBody) Close() error {
 }
 
 func (repository *recordingAuditRepository) RecordAudit(
-	_ context.Context,
+	ctx context.Context,
 	event domain.AuditEvent,
 ) error {
 	repository.mu.Lock()
 	defer repository.mu.Unlock()
+	repository.contextErr = ctx.Err()
+	repository.contextValue = ctx.Value(auditContextKey{})
+	repository.deadline, _ = ctx.Deadline()
+	if repository.contextErr != nil {
+		return repository.contextErr
+	}
 	repository.events = append(repository.events, event)
 	return repository.err
 }

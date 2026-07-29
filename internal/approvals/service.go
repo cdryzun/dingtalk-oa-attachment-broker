@@ -31,6 +31,7 @@ const (
 	maxSearchRange           = 120 * 24 * time.Hour
 	maxSearchHistory         = 365 * 24 * time.Hour
 	searchClockSkew          = time.Minute
+	auditWriteTimeout        = 5 * time.Second
 )
 
 type Provider interface {
@@ -601,7 +602,9 @@ func (service *Service) recordAudit(
 	decision domain.AuditDecision,
 	errorClass string,
 ) error {
-	if err := service.audit.RecordAudit(ctx, domain.AuditEvent{
+	auditContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), auditWriteTimeout)
+	defer cancel()
+	if err := service.audit.RecordAudit(auditContext, domain.AuditEvent{
 		RequestID:          requestID,
 		CorpID:             user.CorpID,
 		ActorUserID:        user.UserID,
