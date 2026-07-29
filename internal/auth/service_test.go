@@ -152,6 +152,54 @@ func TestServiceClaimsOAuthStateBeforeCallingDingTalk(t *testing.T) {
 	}
 }
 
+func TestServiceRejectsAuthorizationAndFailuresAfterClaim(t *testing.T) {
+	repository := &recordingRepository{}
+	service := newTestService(repository, &identityProviderStub{tokenErr: domain.ErrUpstream})
+
+	deniedContext, cancelDenied := context.WithCancel(context.Background())
+	cancelDenied()
+	if err := service.RejectAuthorization(deniedContext, "denied-state"); err != nil {
+		t.Fatalf("RejectAuthorization() error = %v", err)
+	}
+	if repository.rejectCalls != 1 || string(repository.rejectedDeviceHash) != "claimed-device-hash" {
+		t.Fatalf("rejected device hash = %q, calls = %d", repository.rejectedDeviceHash, repository.rejectCalls)
+	}
+
+	repository.rejectErr = domain.ErrUnavailable
+	err := service.CompleteAuthorization(context.Background(), "failed-state", "authorization-code")
+	if !errors.Is(err, domain.ErrUpstream) || !errors.Is(err, domain.ErrUnavailable) {
+		t.Fatalf("CompleteAuthorization() error = %v; want upstream and unavailable", err)
+	}
+	if repository.rejectCalls != 2 {
+		t.Errorf("reject calls = %d; want 2", repository.rejectCalls)
+	}
+	if repository.rejectContextErr != nil || repository.rejectDeadline.IsZero() {
+		t.Errorf("reject context error = %v, deadline = %v", repository.rejectContextErr, repository.rejectDeadline)
+	}
+}
+
+func TestServiceRejectAuthorizationFailures(t *testing.T) {
+	tests := []struct {
+		name       string
+		state      string
+		repository *recordingRepository
+		want       error
+	}{
+		{name: "empty state", state: " ", repository: &recordingRepository{}, want: domain.ErrInvalidInput},
+		{name: "unknown state", state: "state", repository: &recordingRepository{claimErr: domain.ErrUnauthorized}, want: domain.ErrUnauthorized},
+		{name: "repository rejection", state: "state", repository: &recordingRepository{rejectErr: domain.ErrUnavailable}, want: domain.ErrUnavailable},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			service := newTestService(testCase.repository, &identityProviderStub{})
+			err := service.RejectAuthorization(context.Background(), testCase.state)
+			if !errors.Is(err, testCase.want) {
+				t.Fatalf("RejectAuthorization() error = %v; want %v", err, testCase.want)
+			}
+		})
+	}
+}
+
 func TestServiceRejectsAuthorizationFromAnotherCorporation(t *testing.T) {
 	repository := &recordingRepository{}
 	identity := &identityProviderStub{
@@ -633,6 +681,11 @@ type recordingRepository struct {
 	completedUser       domain.User
 	completeCalls       int
 	completeErr         error
+	rejectedDeviceHash  []byte
+	rejectCalls         int
+	rejectErr           error
+	rejectContextErr    error
+	rejectDeadline      time.Time
 	exchangeDeviceHash  []byte
 	exchangeSession     SessionSeed
 	exchangeUser        domain.User
@@ -668,12 +721,15 @@ func (repository *recordingRepository) BindOAuthState(
 }
 
 func (repository *recordingRepository) ClaimOAuthState(
-	_ context.Context,
+	ctx context.Context,
 	stateHash []byte,
 	_ time.Time,
 ) ([]byte, error) {
 	repository.claimCalls++
 	repository.claimStateHash = append([]byte(nil), stateHash...)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if repository.claimErr != nil {
 		return nil, repository.claimErr
 	}
@@ -681,6 +737,18 @@ func (repository *recordingRepository) ClaimOAuthState(
 		return []byte("claimed-device-hash"), nil
 	}
 	return append([]byte(nil), repository.claimedDeviceHash...), nil
+}
+
+func (repository *recordingRepository) RejectDeviceAuthorization(
+	ctx context.Context,
+	deviceCodeHash []byte,
+	_ time.Time,
+) error {
+	repository.rejectCalls++
+	repository.rejectedDeviceHash = append([]byte(nil), deviceCodeHash...)
+	repository.rejectContextErr = ctx.Err()
+	repository.rejectDeadline, _ = ctx.Deadline()
+	return repository.rejectErr
 }
 
 func (repository *recordingRepository) CompleteDeviceAuthorization(

@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -16,7 +17,10 @@ import (
 	"github.com/cdryzun/dingtalk-oa-attachment-broker/internal/domain"
 )
 
-const userCodeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+const (
+	userCodeAlphabet              = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+	authorizationRejectionTimeout = 5 * time.Second
+)
 
 type DeviceAuthorization struct {
 	DeviceCodeHash []byte
@@ -36,6 +40,7 @@ type Repository interface {
 	CreateDeviceAuthorization(context.Context, DeviceAuthorization) error
 	BindOAuthState(context.Context, string, []byte, time.Time) error
 	ClaimOAuthState(context.Context, []byte, time.Time) ([]byte, error)
+	RejectDeviceAuthorization(context.Context, []byte, time.Time) error
 	CompleteDeviceAuthorization(context.Context, []byte, domain.User, time.Time) error
 	ExchangeDeviceAuthorization(context.Context, []byte, SessionSeed, time.Time) (domain.User, error)
 	GetSessionByAccessToken(context.Context, []byte, time.Time) (domain.User, error)
@@ -230,11 +235,42 @@ func (service *Service) StartAuthorization(ctx context.Context, userCode string)
 	return authorizeURL.String(), nil
 }
 
+func (service *Service) RejectAuthorization(ctx context.Context, state string) error {
+	if strings.TrimSpace(state) == "" {
+		return fmt.Errorf("%w: state is required", domain.ErrInvalidInput)
+	}
+	stateHash, err := service.hasher.Hash(state)
+	if err != nil {
+		return fmt.Errorf("hash OAuth state: %w", err)
+	}
+	rejectionContext, cancel := context.WithTimeout(
+		context.WithoutCancel(ctx),
+		authorizationRejectionTimeout,
+	)
+	defer cancel()
+	deviceCodeHash, err := service.repository.ClaimOAuthState(
+		rejectionContext,
+		stateHash,
+		service.now(),
+	)
+	if err != nil {
+		return fmt.Errorf("claim OAuth state: %w", err)
+	}
+	if err := service.repository.RejectDeviceAuthorization(
+		rejectionContext,
+		deviceCodeHash,
+		service.now(),
+	); err != nil {
+		return fmt.Errorf("reject device authorization: %w", err)
+	}
+	return nil
+}
+
 func (service *Service) CompleteAuthorization(
 	ctx context.Context,
 	state string,
 	code string,
-) error {
+) (resultErr error) {
 	if strings.TrimSpace(state) == "" || strings.TrimSpace(code) == "" {
 		return fmt.Errorf("%w: state and code are required", domain.ErrInvalidInput)
 	}
@@ -246,6 +282,17 @@ func (service *Service) CompleteAuthorization(
 	if err != nil {
 		return fmt.Errorf("claim OAuth state: %w", err)
 	}
+	defer func() {
+		if resultErr == nil {
+			return
+		}
+		if rejectErr := service.rejectClaimedAuthorization(ctx, deviceCodeHash); rejectErr != nil {
+			resultErr = errors.Join(
+				resultErr,
+				fmt.Errorf("reject failed device authorization: %w", rejectErr),
+			)
+		}
+	}()
 	identityToken, err := service.identityProvider.ExchangeAuthorizationCode(ctx, code)
 	if err != nil {
 		return fmt.Errorf("exchange DingTalk authorization code: %w", err)
@@ -279,6 +326,22 @@ func (service *Service) CompleteAuthorization(
 		return fmt.Errorf("complete device authorization: %w", err)
 	}
 	return nil
+}
+
+func (service *Service) rejectClaimedAuthorization(
+	ctx context.Context,
+	deviceCodeHash []byte,
+) error {
+	rejectionContext, cancel := context.WithTimeout(
+		context.WithoutCancel(ctx),
+		authorizationRejectionTimeout,
+	)
+	defer cancel()
+	return service.repository.RejectDeviceAuthorization(
+		rejectionContext,
+		deviceCodeHash,
+		service.now(),
+	)
 }
 
 func (service *Service) ExchangeDeviceAuthorization(

@@ -39,6 +39,39 @@ func TestHealthAndReadinessEndpoints(t *testing.T) {
 	}
 }
 
+func TestReadinessIsRateLimitedButLivenessIsExempt(t *testing.T) {
+	handler, err := NewHandler(Options{
+		Auth:              &fakeAuthService{},
+		Attachments:       &fakeAttachmentService{},
+		ApprovalSearch:    &fakeApprovalSearchService{},
+		Readiness:         fakeReadiness{},
+		ReadinessTimeout:  time.Second,
+		RequestsPerMinute: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index, wantStatus := range []int{http.StatusOK, http.StatusTooManyRequests} {
+		request := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != wantStatus {
+			t.Errorf("readyz request %d status = %d; want %d", index+1, response.Code, wantStatus)
+		}
+		if wantStatus == http.StatusTooManyRequests && response.Header().Get("Retry-After") != "60" {
+			t.Errorf("Retry-After = %q; want 60", response.Header().Get("Retry-After"))
+		}
+	}
+	for range 2 {
+		request := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusOK {
+			t.Errorf("healthz status = %d; want 200", response.Code)
+		}
+	}
+}
+
 func TestMetricsAreServedOnlyByDedicatedHandler(t *testing.T) {
 	handler := newTestHandler(t)
 	request := httptest.NewRequest(http.MethodGet, "/metrics", nil)
@@ -266,6 +299,24 @@ func TestDeviceAuthorizationAndOAuthRoutes(t *testing.T) {
 	if tokenResponse.Code != http.StatusOK ||
 		!strings.Contains(tokenResponse.Body.String(), `"accessToken":"access-token"`) {
 		t.Errorf("token response = %d %s", tokenResponse.Code, tokenResponse.Body)
+	}
+}
+
+func TestOAuthCallbackRejectsDeviceAuthorization(t *testing.T) {
+	fakeAuth := &fakeAuthService{}
+	handler := newTestHandlerWithAuth(t, fakeAuth)
+	request := httptest.NewRequest(
+		http.MethodGet,
+		"/auth/dingtalk/callback?error=access_denied&state=opaque-state",
+		nil,
+	)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	assertProblem(t, response, http.StatusForbidden, "forbidden")
+	if fakeAuth.rejectState != "opaque-state" {
+		t.Errorf("rejected state = %q; want opaque-state", fakeAuth.rejectState)
 	}
 }
 
@@ -1050,6 +1101,8 @@ type fakeAuthService struct {
 	startURL          string
 	startError        error
 	completeError     error
+	rejectState       string
+	rejectError       error
 	sessionResponse   auth.SessionResponse
 	exchangeError     error
 	user              domain.User
@@ -1070,6 +1123,11 @@ func (fake *fakeAuthService) StartAuthorization(context.Context, string) (string
 
 func (fake *fakeAuthService) CompleteAuthorization(context.Context, string, string) error {
 	return fake.completeError
+}
+
+func (fake *fakeAuthService) RejectAuthorization(_ context.Context, state string) error {
+	fake.rejectState = state
+	return fake.rejectError
 }
 
 func (fake *fakeAuthService) ExchangeDeviceAuthorization(

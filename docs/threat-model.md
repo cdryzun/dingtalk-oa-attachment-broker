@@ -28,6 +28,7 @@ flowchart LR
 | --- | --- |
 | Stolen device code | Short expiry, HMAC storage, atomic consumption |
 | OAuth CSRF and replay | HMAC state claimed atomically before token exchange |
+| Abandoned device flow | Terminal denial on consent or callback failure |
 | Cross-enterprise login | Exact configured `corpId` comparison |
 | Identity spoofing | Server-side `unionId` to enterprise `userId` mapping |
 | Token database disclosure | HMAC-SHA-256 with external token pepper |

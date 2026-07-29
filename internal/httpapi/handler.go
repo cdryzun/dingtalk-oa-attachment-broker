@@ -40,6 +40,7 @@ const (
 type AuthService interface {
 	CreateDeviceAuthorization(context.Context) (auth.DeviceAuthorizationResponse, error)
 	StartAuthorization(context.Context, string) (string, error)
+	RejectAuthorization(context.Context, string) error
 	CompleteAuthorization(context.Context, string, string) error
 	ExchangeDeviceAuthorization(context.Context, string) (auth.SessionResponse, error)
 	Authenticate(context.Context, string) (domain.User, error)
@@ -97,6 +98,8 @@ type Handler struct {
 type requestContextKey string
 
 const requestIDContextKey requestContextKey = "request_id"
+
+const rateLimitRetryAfterSeconds = 60
 
 func NewHandler(options Options) (*Handler, error) {
 	if options.Auth == nil {
@@ -516,6 +519,13 @@ func (handler *Handler) handleAuthorizationCallback(
 	request *http.Request,
 ) {
 	if request.URL.Query().Get("error") != "" {
+		if err := handler.auth.RejectAuthorization(
+			request.Context(),
+			request.URL.Query().Get("state"),
+		); err != nil {
+			writeProblem(response, request, err)
+			return
+		}
 		writeProblem(response, request, domain.ErrForbidden)
 		return
 	}
@@ -929,6 +939,9 @@ type problemSpec struct {
 }
 
 func writeProblem(response http.ResponseWriter, request *http.Request, err error) {
+	if errors.Is(err, domain.ErrRateLimited) {
+		response.Header().Set("Retry-After", strconv.Itoa(rateLimitRetryAfterSeconds))
+	}
 	writeProblemSpec(response, request, problemForError(err))
 }
 
@@ -1074,7 +1087,7 @@ func routeLabel(path string) string {
 }
 
 func shouldRateLimit(path string) bool {
-	return path != "/healthz" && path != "/readyz"
+	return path != "/healthz"
 }
 
 func (handler *Handler) clientAddress(request *http.Request) string {

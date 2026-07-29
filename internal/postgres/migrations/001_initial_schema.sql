@@ -14,7 +14,7 @@ CREATE TABLE device_authorizations (
     user_code TEXT NOT NULL UNIQUE,
     oauth_state_hash BYTEA UNIQUE,
     status TEXT NOT NULL DEFAULT 'pending'
-        CHECK (status IN ('pending', 'authorizing', 'approved', 'consumed')),
+        CHECK (status IN ('pending', 'authorizing', 'approved', 'denied', 'consumed')),
     corp_id TEXT,
     user_id TEXT,
     created_at TIMESTAMPTZ NOT NULL,

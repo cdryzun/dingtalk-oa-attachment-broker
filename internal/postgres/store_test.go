@@ -215,6 +215,39 @@ func TestStorePersistsDeviceAuthorizationAndRotatingSessions(t *testing.T) {
 	}
 }
 
+func TestStoreReturnsDeniedDeviceAuthorizationImmediately(t *testing.T) {
+	store := openTestStore(t)
+	ctx := context.Background()
+	now := time.Date(2026, 7, 17, 10, 0, 0, 0, time.UTC)
+	deviceHash := []byte("denied-device")
+	stateHash := []byte("denied-state")
+	if err := store.CreateDeviceAuthorization(ctx, auth.DeviceAuthorization{
+		DeviceCodeHash: deviceHash,
+		UserCode:       "DENY-CODE",
+		CreatedAt:      now,
+		ExpiresAt:      now.Add(10 * time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.BindOAuthState(ctx, "DENY-CODE", stateHash, now); err != nil {
+		t.Fatal(err)
+	}
+	claimedHash, err := store.ClaimOAuthState(ctx, stateHash, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RejectDeviceAuthorization(ctx, claimedHash, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RejectDeviceAuthorization(ctx, claimedHash, now); err != nil {
+		t.Fatalf("idempotent RejectDeviceAuthorization() error = %v", err)
+	}
+	_, err = store.ExchangeDeviceAuthorization(ctx, deviceHash, testSessionSeed(now, "denied"), now)
+	if !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("ExchangeDeviceAuthorization() error = %v; want forbidden", err)
+	}
+}
+
 func TestStoreFailsClosedForExpiredAndUnknownCredentials(t *testing.T) {
 	store := openTestStore(t)
 	ctx := context.Background()

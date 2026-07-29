@@ -183,6 +183,61 @@ func (store *Store) ClaimOAuthState(
 	return append([]byte(nil), deviceCodeHash...), nil
 }
 
+func (store *Store) RejectDeviceAuthorization(
+	ctx context.Context,
+	deviceCodeHash []byte,
+	now time.Time,
+) error {
+	transaction, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin authorization rejection transaction: %w", err)
+	}
+	defer rollback(transaction)
+
+	var status string
+	var expiresAt time.Time
+	err = transaction.QueryRow(
+		ctx,
+		`SELECT status, expires_at
+		 FROM device_authorizations
+		 WHERE device_code_hash = $1
+		 FOR UPDATE`,
+		deviceCodeHash,
+	).Scan(&status, &expiresAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.ErrUnauthorized
+	}
+	if err != nil {
+		return fmt.Errorf("load claimed device authorization for rejection: %w", err)
+	}
+	if !expiresAt.After(now) {
+		return domain.ErrExpired
+	}
+	switch status {
+	case "authorizing":
+	case "denied":
+		return nil
+	case "approved", "consumed":
+		return domain.ErrAlreadyUsed
+	default:
+		return fmt.Errorf("%w: device authorization was not claimed", domain.ErrConflict)
+	}
+
+	if _, err := transaction.Exec(
+		ctx,
+		`UPDATE device_authorizations
+		 SET status = 'denied'
+		 WHERE device_code_hash = $1`,
+		deviceCodeHash,
+	); err != nil {
+		return fmt.Errorf("reject device authorization: %w", err)
+	}
+	if err := transaction.Commit(ctx); err != nil {
+		return fmt.Errorf("commit authorization rejection transaction: %w", err)
+	}
+	return nil
+}
+
 func (store *Store) CompleteDeviceAuthorization(
 	ctx context.Context,
 	deviceCodeHash []byte,
@@ -297,6 +352,8 @@ func (store *Store) ExchangeDeviceAuthorization(
 	switch status {
 	case "pending", "authorizing":
 		return domain.User{}, domain.ErrAuthorizationPending
+	case "denied":
+		return domain.User{}, domain.ErrForbidden
 	case "consumed":
 		return domain.User{}, domain.ErrAlreadyUsed
 	case "approved":

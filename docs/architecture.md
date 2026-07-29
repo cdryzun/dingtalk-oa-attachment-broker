@@ -59,6 +59,9 @@ sequenceDiagram
 The DingTalk user token exists only within the callback request. The database
 contains only HMAC values for device, OAuth state, access, and refresh
 credentials.
+Consent denial and failures after state claim move the device authorization to
+a terminal denied state, so polling clients stop immediately instead of waiting
+for expiry.
 
 ## Attachment download sequence
 
