@@ -76,6 +76,8 @@ Expired device authorizations and sessions whose refresh lifetime ended or
 whose revocation is older than the configured authentication retention are
 also deleted once per day. The default authentication record retention is
 seven days. Active and refreshable sessions are never removed by this job.
+Audit pruning and authentication-state pruning each receive an independent
+30-second deadline so a slow audit backlog cannot starve session cleanup.
 
 ## Deployment change gate
 

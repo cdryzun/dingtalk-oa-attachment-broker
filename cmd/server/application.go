@@ -16,7 +16,10 @@ import (
 	"github.com/cdryzun/dingtalk-oa-attachment-broker/internal/postgres"
 )
 
-const retentionPruneInterval = 24 * time.Hour
+const (
+	retentionPruneInterval = 24 * time.Hour
+	retentionPruneTimeout  = 30 * time.Second
+)
 
 type application struct {
 	handler        http.Handler
@@ -145,13 +148,13 @@ func maintainRetention(
 	logger *slog.Logger,
 ) {
 	prune := func() {
-		pruneContext, cancel := context.WithTimeout(ctx, 30*time.Second)
-		defer cancel()
 		now := time.Now()
+		auditContext, cancelAudit := context.WithTimeout(ctx, retentionPruneTimeout)
 		deletedAuditEvents, auditErr := pruner.PruneAudit(
-			pruneContext,
+			auditContext,
 			now.Add(-auditRetention),
 		)
+		cancelAudit()
 		if auditErr != nil {
 			if ctx.Err() == nil {
 				logger.WarnContext(
@@ -162,10 +165,12 @@ func maintainRetention(
 				)
 			}
 		}
+		authContext, cancelAuth := context.WithTimeout(ctx, retentionPruneTimeout)
 		deletedAuthenticationState, authErr := pruner.PruneAuthenticationState(
-			pruneContext,
+			authContext,
 			now.Add(-authRecordRetention),
 		)
+		cancelAuth()
 		if authErr != nil {
 			if ctx.Err() == nil {
 				logger.WarnContext(

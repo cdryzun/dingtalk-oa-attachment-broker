@@ -37,37 +37,47 @@ func TestMaintainRetentionPrunesAuditAndAuthenticationState(t *testing.T) {
 	}
 	assertCutoffWithin(t, pruner.auditCutoff, startedAt.Add(-auditRetention))
 	assertCutoffWithin(t, pruner.authCutoff, startedAt.Add(-authRetention))
+	if pruner.auditContext == nil || pruner.authContext == nil {
+		t.Fatal("prune contexts were not recorded")
+	}
+	if pruner.auditContext == pruner.authContext {
+		t.Error("audit and authentication pruning shared one timeout context")
+	}
 }
 
 type recordingRetentionPruner struct {
-	mu          sync.Mutex
-	cancel      context.CancelFunc
-	result      postgres.AuthenticationPruneResult
-	auditCalls  int
-	authCalls   int
-	auditCutoff time.Time
-	authCutoff  time.Time
+	mu           sync.Mutex
+	cancel       context.CancelFunc
+	result       postgres.AuthenticationPruneResult
+	auditCalls   int
+	authCalls    int
+	auditCutoff  time.Time
+	authCutoff   time.Time
+	auditContext context.Context
+	authContext  context.Context
 }
 
 func (pruner *recordingRetentionPruner) PruneAudit(
-	_ context.Context,
+	ctx context.Context,
 	cutoff time.Time,
 ) (int64, error) {
 	pruner.mu.Lock()
 	defer pruner.mu.Unlock()
 	pruner.auditCalls++
+	pruner.auditContext = ctx
 	pruner.auditCutoff = cutoff
 	return 1, nil
 }
 
 func (pruner *recordingRetentionPruner) PruneAuthenticationState(
-	_ context.Context,
+	ctx context.Context,
 	cutoff time.Time,
 ) (postgres.AuthenticationPruneResult, error) {
 	pruner.mu.Lock()
 	defer pruner.mu.Unlock()
 	pruner.authCalls++
 	pruner.authCutoff = cutoff
+	pruner.authContext = ctx
 	pruner.cancel()
 	return pruner.result, nil
 }
