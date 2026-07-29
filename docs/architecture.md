@@ -45,6 +45,7 @@ sequenceDiagram
     Broker-->>User: 303 DingTalk authorization
     User->>DingTalk: Authenticate and consent
     DingTalk-->>Broker: Callback with code and state
+    Broker->>DB: Atomically claim HMAC(OAuth state)
     Broker->>DingTalk: Exchange code for user token
     Broker->>DingTalk: Get current unionId and corpId
     Broker->>DingTalk: Map unionId to enterprise userId

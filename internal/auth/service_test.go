@@ -117,8 +117,38 @@ func TestServiceCompletesAuthorizationWithVerifiedEnterpriseUser(t *testing.T) {
 	if repository.completedUser != wantUser {
 		t.Errorf("completed user = %#v; want %#v", repository.completedUser, wantUser)
 	}
-	if string(repository.completedStateHash) == "raw-state" {
+	if repository.claimCalls != 1 {
+		t.Errorf("OAuth state claim calls = %d; want 1", repository.claimCalls)
+	}
+	if string(repository.claimStateHash) == "raw-state" {
 		t.Error("repository received the raw OAuth state")
+	}
+	if string(repository.completedDeviceHash) != "claimed-device-hash" {
+		t.Errorf("completed device hash = %q; want claimed hash", repository.completedDeviceHash)
+	}
+}
+
+func TestServiceClaimsOAuthStateBeforeCallingDingTalk(t *testing.T) {
+	repository := &recordingRepository{claimErr: domain.ErrUnauthorized}
+	identity := &identityProviderStub{
+		token: IdentityToken{AccessToken: "user-token", CorpID: "corp-id"},
+		profile: IdentityProfile{
+			UnionID:     "union-id",
+			DisplayName: "Verified User",
+		},
+		userID: "user-id",
+	}
+	service := newTestService(repository, identity)
+
+	err := service.CompleteAuthorization(context.Background(), "unknown-state", "authorization-code")
+	if !errors.Is(err, domain.ErrUnauthorized) {
+		t.Fatalf("CompleteAuthorization() error = %v; want ErrUnauthorized", err)
+	}
+	if identity.receivedCode != "" {
+		t.Errorf("DingTalk received code %q before state validation", identity.receivedCode)
+	}
+	if repository.completeCalls != 0 {
+		t.Error("repository completed an unclaimed authorization")
 	}
 }
 
@@ -586,28 +616,32 @@ func validServiceOptions(t *testing.T) Options {
 }
 
 type recordingRepository struct {
-	createdDevice      DeviceAuthorization
-	createErr          error
-	boundUserCode      string
-	boundStateHash     []byte
-	bindErr            error
-	completedStateHash []byte
-	completedUser      domain.User
-	completeCalls      int
-	completeErr        error
-	exchangeDeviceHash []byte
-	exchangeSession    SessionSeed
-	exchangeUser       domain.User
-	exchangeErr        error
-	sessionAccessHash  []byte
-	sessionUser        domain.User
-	sessionErr         error
-	rotateRefreshHash  []byte
-	rotateSession      SessionSeed
-	rotateUser         domain.User
-	rotateErr          error
-	revokedAccessHash  []byte
-	revokeErr          error
+	createdDevice       DeviceAuthorization
+	createErr           error
+	boundUserCode       string
+	boundStateHash      []byte
+	bindErr             error
+	claimStateHash      []byte
+	claimedDeviceHash   []byte
+	claimCalls          int
+	claimErr            error
+	completedDeviceHash []byte
+	completedUser       domain.User
+	completeCalls       int
+	completeErr         error
+	exchangeDeviceHash  []byte
+	exchangeSession     SessionSeed
+	exchangeUser        domain.User
+	exchangeErr         error
+	sessionAccessHash   []byte
+	sessionUser         domain.User
+	sessionErr          error
+	rotateRefreshHash   []byte
+	rotateSession       SessionSeed
+	rotateUser          domain.User
+	rotateErr           error
+	revokedAccessHash   []byte
+	revokeErr           error
 }
 
 func (repository *recordingRepository) CreateDeviceAuthorization(
@@ -629,14 +663,30 @@ func (repository *recordingRepository) BindOAuthState(
 	return repository.bindErr
 }
 
-func (repository *recordingRepository) CompleteDeviceAuthorization(
+func (repository *recordingRepository) ClaimOAuthState(
 	_ context.Context,
 	stateHash []byte,
+	_ time.Time,
+) ([]byte, error) {
+	repository.claimCalls++
+	repository.claimStateHash = append([]byte(nil), stateHash...)
+	if repository.claimErr != nil {
+		return nil, repository.claimErr
+	}
+	if len(repository.claimedDeviceHash) == 0 {
+		return []byte("claimed-device-hash"), nil
+	}
+	return append([]byte(nil), repository.claimedDeviceHash...), nil
+}
+
+func (repository *recordingRepository) CompleteDeviceAuthorization(
+	_ context.Context,
+	deviceCodeHash []byte,
 	user domain.User,
 	_ time.Time,
 ) error {
 	repository.completeCalls++
-	repository.completedStateHash = append([]byte(nil), stateHash...)
+	repository.completedDeviceHash = append([]byte(nil), deviceCodeHash...)
 	repository.completedUser = user
 	return repository.completeErr
 }

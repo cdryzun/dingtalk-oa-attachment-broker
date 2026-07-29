@@ -35,6 +35,7 @@ type SessionSeed struct {
 type Repository interface {
 	CreateDeviceAuthorization(context.Context, DeviceAuthorization) error
 	BindOAuthState(context.Context, string, []byte, time.Time) error
+	ClaimOAuthState(context.Context, []byte, time.Time) ([]byte, error)
 	CompleteDeviceAuthorization(context.Context, []byte, domain.User, time.Time) error
 	ExchangeDeviceAuthorization(context.Context, []byte, SessionSeed, time.Time) (domain.User, error)
 	GetSessionByAccessToken(context.Context, []byte, time.Time) (domain.User, error)
@@ -237,6 +238,14 @@ func (service *Service) CompleteAuthorization(
 	if strings.TrimSpace(state) == "" || strings.TrimSpace(code) == "" {
 		return fmt.Errorf("%w: state and code are required", domain.ErrInvalidInput)
 	}
+	stateHash, err := service.hasher.Hash(state)
+	if err != nil {
+		return fmt.Errorf("hash OAuth state: %w", err)
+	}
+	deviceCodeHash, err := service.repository.ClaimOAuthState(ctx, stateHash, service.now())
+	if err != nil {
+		return fmt.Errorf("claim OAuth state: %w", err)
+	}
 	identityToken, err := service.identityProvider.ExchangeAuthorizationCode(ctx, code)
 	if err != nil {
 		return fmt.Errorf("exchange DingTalk authorization code: %w", err)
@@ -261,11 +270,7 @@ func (service *Service) CompleteAuthorization(
 	if userID == "" {
 		return fmt.Errorf("%w: DingTalk user ID is empty", domain.ErrUpstream)
 	}
-	stateHash, err := service.hasher.Hash(state)
-	if err != nil {
-		return fmt.Errorf("hash OAuth state: %w", err)
-	}
-	if err := service.repository.CompleteDeviceAuthorization(ctx, stateHash, domain.User{
+	if err := service.repository.CompleteDeviceAuthorization(ctx, deviceCodeHash, domain.User{
 		CorpID:      identityToken.CorpID,
 		UserID:      userID,
 		UnionID:     profile.UnionID,

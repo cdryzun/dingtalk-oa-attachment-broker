@@ -143,7 +143,22 @@ func TestStorePersistsDeviceAuthorizationAndRotatingSessions(t *testing.T) {
 		t.Fatalf("ExchangeDeviceAuthorization() before approval error = %v; want pending", err)
 	}
 
-	if err := store.CompleteDeviceAuthorization(ctx, stateHash, user, now); err != nil {
+	claimedDeviceHash, err := store.ClaimOAuthState(ctx, stateHash, now)
+	if err != nil {
+		t.Fatalf("ClaimOAuthState() error = %v", err)
+	}
+	if string(claimedDeviceHash) != string(deviceHash) {
+		t.Errorf("claimed device hash = %q; want %q", claimedDeviceHash, deviceHash)
+	}
+	if _, err := store.ClaimOAuthState(ctx, stateHash, now); !errors.Is(err, domain.ErrUnauthorized) {
+		t.Errorf("replayed ClaimOAuthState() error = %v; want unauthorized", err)
+	}
+	_, err = store.ExchangeDeviceAuthorization(ctx, deviceHash, testSessionSeed(now, "authorizing"), now)
+	if !errors.Is(err, domain.ErrAuthorizationPending) {
+		t.Fatalf("ExchangeDeviceAuthorization() while authorizing error = %v; want pending", err)
+	}
+
+	if err := store.CompleteDeviceAuthorization(ctx, claimedDeviceHash, user, now); err != nil {
 		t.Fatalf("CompleteDeviceAuthorization() error = %v", err)
 	}
 	sessionUser, err := store.ExchangeDeviceAuthorization(

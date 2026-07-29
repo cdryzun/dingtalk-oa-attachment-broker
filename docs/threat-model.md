@@ -27,7 +27,7 @@ flowchart LR
 | Threat | Control |
 | --- | --- |
 | Stolen device code | Short expiry, HMAC storage, atomic consumption |
-| OAuth CSRF | Random state, HMAC storage, one-time state binding |
+| OAuth CSRF and replay | HMAC state claimed atomically before token exchange |
 | Cross-enterprise login | Exact configured `corpId` comparison |
 | Identity spoofing | Server-side `unionId` to enterprise `userId` mapping |
 | Token database disclosure | HMAC-SHA-256 with external token pepper |

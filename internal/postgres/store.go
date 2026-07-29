@@ -133,9 +133,59 @@ func (store *Store) BindOAuthState(
 	return nil
 }
 
-func (store *Store) CompleteDeviceAuthorization(
+func (store *Store) ClaimOAuthState(
 	ctx context.Context,
 	stateHash []byte,
+	now time.Time,
+) ([]byte, error) {
+	transaction, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("begin OAuth state claim transaction: %w", err)
+	}
+	defer rollback(transaction)
+
+	var deviceCodeHash []byte
+	var status string
+	var expiresAt time.Time
+	err = transaction.QueryRow(
+		ctx,
+		`SELECT device_code_hash, status, expires_at
+		 FROM device_authorizations
+		 WHERE oauth_state_hash = $1
+		 FOR UPDATE`,
+		stateHash,
+	).Scan(&deviceCodeHash, &status, &expiresAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, domain.ErrUnauthorized
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load device authorization by OAuth state: %w", err)
+	}
+	if !expiresAt.After(now) {
+		return nil, domain.ErrExpired
+	}
+	if status != "pending" {
+		return nil, domain.ErrAlreadyUsed
+	}
+
+	if _, err := transaction.Exec(
+		ctx,
+		`UPDATE device_authorizations
+		 SET status = 'authorizing', oauth_state_hash = NULL
+		 WHERE device_code_hash = $1`,
+		deviceCodeHash,
+	); err != nil {
+		return nil, fmt.Errorf("claim OAuth state: %w", err)
+	}
+	if err := transaction.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit OAuth state claim transaction: %w", err)
+	}
+	return append([]byte(nil), deviceCodeHash...), nil
+}
+
+func (store *Store) CompleteDeviceAuthorization(
+	ctx context.Context,
+	deviceCodeHash []byte,
 	user domain.User,
 	now time.Time,
 ) error {
@@ -151,21 +201,25 @@ func (store *Store) CompleteDeviceAuthorization(
 		ctx,
 		`SELECT status, expires_at
 		 FROM device_authorizations
-		 WHERE oauth_state_hash = $1
+		 WHERE device_code_hash = $1
 		 FOR UPDATE`,
-		stateHash,
+		deviceCodeHash,
 	).Scan(&status, &expiresAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.ErrUnauthorized
 	}
 	if err != nil {
-		return fmt.Errorf("load device authorization by OAuth state: %w", err)
+		return fmt.Errorf("load claimed device authorization: %w", err)
 	}
 	if !expiresAt.After(now) {
 		return domain.ErrExpired
 	}
-	if status != "pending" {
+	switch status {
+	case "authorizing":
+	case "approved", "consumed":
 		return domain.ErrAlreadyUsed
+	default:
+		return fmt.Errorf("%w: device authorization was not claimed", domain.ErrConflict)
 	}
 
 	_, err = transaction.Exec(
@@ -192,13 +246,12 @@ func (store *Store) CompleteDeviceAuthorization(
 		 SET status = 'approved',
 		     corp_id = $1,
 		     user_id = $2,
-		     authorized_at = $3,
-		     oauth_state_hash = NULL
-		 WHERE oauth_state_hash = $4`,
+		     authorized_at = $3
+		 WHERE device_code_hash = $4`,
 		user.CorpID,
 		user.UserID,
 		now,
-		stateHash,
+		deviceCodeHash,
 	); err != nil {
 		return fmt.Errorf("approve device authorization: %w", err)
 	}
@@ -242,7 +295,7 @@ func (store *Store) ExchangeDeviceAuthorization(
 		return domain.User{}, domain.ErrExpired
 	}
 	switch status {
-	case "pending":
+	case "pending", "authorizing":
 		return domain.User{}, domain.ErrAuthorizationPending
 	case "consumed":
 		return domain.User{}, domain.ErrAlreadyUsed
