@@ -246,6 +246,35 @@ func TestStoreReturnsDeniedDeviceAuthorizationImmediately(t *testing.T) {
 	if !errors.Is(err, domain.ErrForbidden) {
 		t.Fatalf("ExchangeDeviceAuthorization() error = %v; want forbidden", err)
 	}
+
+	directDeviceHash := []byte("direct-denied-device")
+	directStateHash := []byte("direct-denied-state")
+	if err := store.CreateDeviceAuthorization(ctx, auth.DeviceAuthorization{
+		DeviceCodeHash: directDeviceHash,
+		UserCode:       "DEN2-CODE",
+		CreatedAt:      now,
+		ExpiresAt:      now.Add(10 * time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.BindOAuthState(ctx, "DEN2-CODE", directStateHash, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RejectOAuthState(ctx, directStateHash, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RejectOAuthState(ctx, directStateHash, now); !errors.Is(err, domain.ErrUnauthorized) {
+		t.Fatalf("replayed RejectOAuthState() error = %v; want unauthorized", err)
+	}
+	_, err = store.ExchangeDeviceAuthorization(
+		ctx,
+		directDeviceHash,
+		testSessionSeed(now, "direct-denied"),
+		now,
+	)
+	if !errors.Is(err, domain.ErrForbidden) {
+		t.Fatalf("direct denied exchange error = %v; want forbidden", err)
+	}
 }
 
 func TestStoreFailsClosedForExpiredAndUnknownCredentials(t *testing.T) {
@@ -449,6 +478,16 @@ func TestUnlockMigrationUsesBoundedContext(t *testing.T) {
 	}
 	if len(recorder.arguments) != 1 || recorder.arguments[0] != migrationAdvisoryLockID {
 		t.Errorf("unlock arguments = %#v", recorder.arguments)
+	}
+}
+
+func TestClassifyWriteErrorMapsDatabaseFailures(t *testing.T) {
+	if err := classifyWriteError("write fixture", errors.New("database unavailable")); !errors.Is(err, domain.ErrUnavailable) {
+		t.Errorf("operational write error = %v; want unavailable", err)
+	}
+	duplicate := &pgconn.PgError{Code: "23505"}
+	if err := classifyWriteError("write fixture", duplicate); !errors.Is(err, domain.ErrConflict) {
+		t.Errorf("duplicate write error = %v; want conflict", err)
 	}
 }
 

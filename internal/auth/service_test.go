@@ -161,8 +161,13 @@ func TestServiceRejectsAuthorizationAndFailuresAfterClaim(t *testing.T) {
 	if err := service.RejectAuthorization(deniedContext, "denied-state"); err != nil {
 		t.Fatalf("RejectAuthorization() error = %v", err)
 	}
-	if repository.rejectCalls != 1 || string(repository.rejectedDeviceHash) != "claimed-device-hash" {
-		t.Fatalf("rejected device hash = %q, calls = %d", repository.rejectedDeviceHash, repository.rejectCalls)
+	if repository.rejectOAuthCalls != 1 || repository.claimCalls != 0 || repository.rejectCalls != 0 {
+		t.Fatalf(
+			"OAuth rejects = %d, claims = %d, device rejects = %d; want 1, 0, 0",
+			repository.rejectOAuthCalls,
+			repository.claimCalls,
+			repository.rejectCalls,
+		)
 	}
 
 	repository.rejectErr = domain.ErrUnavailable
@@ -170,8 +175,8 @@ func TestServiceRejectsAuthorizationAndFailuresAfterClaim(t *testing.T) {
 	if !errors.Is(err, domain.ErrUpstream) || !errors.Is(err, domain.ErrUnavailable) {
 		t.Fatalf("CompleteAuthorization() error = %v; want upstream and unavailable", err)
 	}
-	if repository.rejectCalls != 2 {
-		t.Errorf("reject calls = %d; want 2", repository.rejectCalls)
+	if repository.rejectCalls != 1 {
+		t.Errorf("reject calls = %d; want 1", repository.rejectCalls)
 	}
 	if repository.rejectContextErr != nil || repository.rejectDeadline.IsZero() {
 		t.Errorf("reject context error = %v, deadline = %v", repository.rejectContextErr, repository.rejectDeadline)
@@ -186,7 +191,7 @@ func TestServiceRejectAuthorizationFailures(t *testing.T) {
 		want       error
 	}{
 		{name: "empty state", state: " ", repository: &recordingRepository{}, want: domain.ErrInvalidInput},
-		{name: "unknown state", state: "state", repository: &recordingRepository{claimErr: domain.ErrUnauthorized}, want: domain.ErrUnauthorized},
+		{name: "unknown state", state: "state", repository: &recordingRepository{rejectErr: domain.ErrUnauthorized}, want: domain.ErrUnauthorized},
 		{name: "repository rejection", state: "state", repository: &recordingRepository{rejectErr: domain.ErrUnavailable}, want: domain.ErrUnavailable},
 	}
 	for _, testCase := range tests {
@@ -668,37 +673,39 @@ func validServiceOptions(t *testing.T) Options {
 }
 
 type recordingRepository struct {
-	createdDevice       DeviceAuthorization
-	createErr           error
-	boundUserCode       string
-	boundStateHash      []byte
-	bindErr             error
-	claimStateHash      []byte
-	claimedDeviceHash   []byte
-	claimCalls          int
-	claimErr            error
-	completedDeviceHash []byte
-	completedUser       domain.User
-	completeCalls       int
-	completeErr         error
-	rejectedDeviceHash  []byte
-	rejectCalls         int
-	rejectErr           error
-	rejectContextErr    error
-	rejectDeadline      time.Time
-	exchangeDeviceHash  []byte
-	exchangeSession     SessionSeed
-	exchangeUser        domain.User
-	exchangeErr         error
-	sessionAccessHash   []byte
-	sessionUser         domain.User
-	sessionErr          error
-	rotateRefreshHash   []byte
-	rotateSession       SessionSeed
-	rotateUser          domain.User
-	rotateErr           error
-	revokedAccessHash   []byte
-	revokeErr           error
+	createdDevice          DeviceAuthorization
+	createErr              error
+	boundUserCode          string
+	boundStateHash         []byte
+	bindErr                error
+	claimStateHash         []byte
+	claimedDeviceHash      []byte
+	claimCalls             int
+	claimErr               error
+	rejectedOAuthStateHash []byte
+	rejectOAuthCalls       int
+	completedDeviceHash    []byte
+	completedUser          domain.User
+	completeCalls          int
+	completeErr            error
+	rejectedDeviceHash     []byte
+	rejectCalls            int
+	rejectErr              error
+	rejectContextErr       error
+	rejectDeadline         time.Time
+	exchangeDeviceHash     []byte
+	exchangeSession        SessionSeed
+	exchangeUser           domain.User
+	exchangeErr            error
+	sessionAccessHash      []byte
+	sessionUser            domain.User
+	sessionErr             error
+	rotateRefreshHash      []byte
+	rotateSession          SessionSeed
+	rotateUser             domain.User
+	rotateErr              error
+	revokedAccessHash      []byte
+	revokeErr              error
 }
 
 func (repository *recordingRepository) CreateDeviceAuthorization(
@@ -737,6 +744,18 @@ func (repository *recordingRepository) ClaimOAuthState(
 		return []byte("claimed-device-hash"), nil
 	}
 	return append([]byte(nil), repository.claimedDeviceHash...), nil
+}
+
+func (repository *recordingRepository) RejectOAuthState(
+	ctx context.Context,
+	stateHash []byte,
+	_ time.Time,
+) error {
+	repository.rejectOAuthCalls++
+	repository.rejectedOAuthStateHash = append([]byte(nil), stateHash...)
+	repository.rejectContextErr = ctx.Err()
+	repository.rejectDeadline, _ = ctx.Deadline()
+	return repository.rejectErr
 }
 
 func (repository *recordingRepository) RejectDeviceAuthorization(

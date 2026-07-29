@@ -39,6 +39,7 @@ type SessionSeed struct {
 type Repository interface {
 	CreateDeviceAuthorization(context.Context, DeviceAuthorization) error
 	BindOAuthState(context.Context, string, []byte, time.Time) error
+	RejectOAuthState(context.Context, []byte, time.Time) error
 	ClaimOAuthState(context.Context, []byte, time.Time) ([]byte, error)
 	RejectDeviceAuthorization(context.Context, []byte, time.Time) error
 	CompleteDeviceAuthorization(context.Context, []byte, domain.User, time.Time) error
@@ -248,20 +249,12 @@ func (service *Service) RejectAuthorization(ctx context.Context, state string) e
 		authorizationRejectionTimeout,
 	)
 	defer cancel()
-	deviceCodeHash, err := service.repository.ClaimOAuthState(
+	if err := service.repository.RejectOAuthState(
 		rejectionContext,
 		stateHash,
 		service.now(),
-	)
-	if err != nil {
-		return fmt.Errorf("claim OAuth state: %w", err)
-	}
-	if err := service.repository.RejectDeviceAuthorization(
-		rejectionContext,
-		deviceCodeHash,
-		service.now(),
 	); err != nil {
-		return fmt.Errorf("reject device authorization: %w", err)
+		return fmt.Errorf("reject OAuth state: %w", err)
 	}
 	return nil
 }

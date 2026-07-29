@@ -133,6 +133,30 @@ func (store *Store) BindOAuthState(
 	return nil
 }
 
+func (store *Store) RejectOAuthState(
+	ctx context.Context,
+	stateHash []byte,
+	now time.Time,
+) error {
+	tag, err := store.pool.Exec(
+		ctx,
+		`UPDATE device_authorizations
+		 SET status = 'denied', oauth_state_hash = NULL
+		 WHERE oauth_state_hash = $1
+		   AND status = 'pending'
+		   AND expires_at > $2`,
+		stateHash,
+		now,
+	)
+	if err != nil {
+		return classifyWriteError("reject OAuth state", err)
+	}
+	if tag.RowsAffected() != 1 {
+		return domain.ErrUnauthorized
+	}
+	return nil
+}
+
 func (store *Store) ClaimOAuthState(
 	ctx context.Context,
 	stateHash []byte,
@@ -658,5 +682,5 @@ func classifyWriteError(operation string, err error) error {
 	if errors.As(err, &postgresError) && postgresError.Code == "23505" {
 		return fmt.Errorf("%w: %s", domain.ErrConflict, operation)
 	}
-	return fmt.Errorf("%s: %w", operation, err)
+	return fmt.Errorf("%w: %s: %v", domain.ErrUnavailable, operation, err)
 }
