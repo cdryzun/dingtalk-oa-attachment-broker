@@ -26,9 +26,7 @@ func (store *Store) Migrate(ctx context.Context) error {
 	if _, err := connection.Exec(ctx, `SELECT pg_advisory_lock($1)`, migrationAdvisoryLockID); err != nil {
 		return fmt.Errorf("acquire migration advisory lock: %w", err)
 	}
-	defer func() {
-		_, _ = connection.Exec(context.Background(), `SELECT pg_advisory_unlock($1)`, migrationAdvisoryLockID)
-	}()
+	defer unlockMigration(connection)
 
 	if _, err := connection.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -72,9 +70,7 @@ func (store *Store) applyMigration(
 	if err != nil {
 		return fmt.Errorf("begin migration %s: %w", version, err)
 	}
-	defer func() {
-		_ = transaction.Rollback(context.Background())
-	}()
+	defer rollback(transaction)
 
 	var applied bool
 	if err := transaction.QueryRow(
@@ -102,4 +98,10 @@ func (store *Store) applyMigration(
 		return fmt.Errorf("commit migration %s: %w", version, err)
 	}
 	return nil
+}
+
+func unlockMigration(connection executor) {
+	ctx, cancel := context.WithTimeout(context.Background(), rollbackTimeout)
+	defer cancel()
+	_, _ = connection.Exec(ctx, `SELECT pg_advisory_unlock($1)`, migrationAdvisoryLockID)
 }

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	embeddedpostgres "github.com/fergusstrange/embedded-postgres"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/cdryzun/dingtalk-oa-attachment-broker/internal/auth"
 	"github.com/cdryzun/dingtalk-oa-attachment-broker/internal/domain"
@@ -400,6 +401,24 @@ func TestRollbackUsesBoundedContext(t *testing.T) {
 	rollback(nil)
 }
 
+func TestUnlockMigrationUsesBoundedContext(t *testing.T) {
+	recorder := &migrationUnlockRecorder{}
+	unlockMigration(recorder)
+	if !recorder.called {
+		t.Fatal("unlockMigration() did not execute the unlock query")
+	}
+	if recorder.deadline.IsZero() {
+		t.Fatal("unlockMigration() context did not have a deadline")
+	}
+	remaining := time.Until(recorder.deadline)
+	if remaining <= 0 || remaining > rollbackTimeout {
+		t.Errorf("unlock deadline remaining = %v; want within %v", remaining, rollbackTimeout)
+	}
+	if len(recorder.arguments) != 1 || recorder.arguments[0] != migrationAdvisoryLockID {
+		t.Errorf("unlock arguments = %#v", recorder.arguments)
+	}
+}
+
 type rollbackRecorder struct {
 	called   bool
 	deadline time.Time
@@ -409,6 +428,23 @@ func (recorder *rollbackRecorder) Rollback(ctx context.Context) error {
 	recorder.called = true
 	recorder.deadline, _ = ctx.Deadline()
 	return errors.New("rollback test error")
+}
+
+type migrationUnlockRecorder struct {
+	called    bool
+	deadline  time.Time
+	arguments []any
+}
+
+func (recorder *migrationUnlockRecorder) Exec(
+	ctx context.Context,
+	_ string,
+	arguments ...any,
+) (pgconn.CommandTag, error) {
+	recorder.called = true
+	recorder.deadline, _ = ctx.Deadline()
+	recorder.arguments = arguments
+	return pgconn.CommandTag{}, errors.New("unlock test error")
 }
 
 func openTestStore(t *testing.T) *Store {
