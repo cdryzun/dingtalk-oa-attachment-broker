@@ -77,8 +77,9 @@ paths:
       operationId: completeDingTalkAuthorization
       summary: Complete DingTalk user authorization
       description: |
-        Browser callback registered in the DingTalk application. The user
-        access token is used only during this request and is never persisted.
+        Browser callback registered in the DingTalk application. A successful
+        callback supplies `code`; a consent denial supplies `error`. Both forms
+        supply `state`. The user access token exists only during this request.
       parameters:
         - name: state
           in: query
@@ -87,7 +88,13 @@ paths:
             type: string
         - name: code
           in: query
-          required: true
+          required: false
+          schema:
+            type: string
+        - name: error
+          in: query
+          required: false
+          description: OAuth error returned when the user denies consent.
           schema:
             type: string
       responses:

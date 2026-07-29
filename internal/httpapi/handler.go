@@ -692,6 +692,9 @@ func (handler *Handler) handleListAttachments(
 		writeProblem(response, request, err)
 		return
 	}
+	if result == nil {
+		result = []domain.Attachment{}
+	}
 	handler.logAttachmentOperation(
 		request.Context(),
 		slog.LevelInfo,
@@ -1051,7 +1054,7 @@ func contentDisposition(filename string) string {
 			fallback.WriteByte('_')
 		}
 	}
-	encoded := strings.ReplaceAll(url.PathEscape(filename), "+", "%20")
+	encoded := url.PathEscape(filename)
 	return fmt.Sprintf(
 		"attachment; filename=\"%s\"; filename*=UTF-8''%s",
 		fallback.String(),

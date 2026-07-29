@@ -39,6 +39,32 @@ func TestHealthAndReadinessEndpoints(t *testing.T) {
 	}
 }
 
+func TestAttachmentListSerializesEmptyArray(t *testing.T) {
+	handler := newTestHandlerWithServices(
+		t,
+		&fakeAuthService{user: domain.User{CorpID: "corp-id", UserID: "user-id"}},
+		&fakeAttachmentService{},
+	)
+	request := authenticatedRequest(
+		t,
+		http.MethodGet,
+		"/api/v1/approvals/instance-id/attachments",
+		nil,
+	)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"attachments":[]`) {
+		t.Fatalf("attachment response = %d %s; want empty array", response.Code, response.Body)
+	}
+}
+
+func TestContentDispositionPreservesPlusAndEncodesSpace(t *testing.T) {
+	got := contentDisposition("report+a b.xlsx")
+	if !strings.Contains(got, "filename*=UTF-8''report+a%20b.xlsx") {
+		t.Errorf("Content-Disposition = %q", got)
+	}
+}
+
 func TestReadinessIsRateLimitedButLivenessIsExempt(t *testing.T) {
 	handler, err := NewHandler(Options{
 		Auth:              &fakeAuthService{},
