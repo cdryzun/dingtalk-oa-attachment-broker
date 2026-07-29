@@ -793,7 +793,7 @@ func (handler *Handler) handleDownload(
 			slog.Int64("contentLength", download.ContentLength),
 			slog.String("errorClass", errorCode(streamError)),
 		)
-		return
+		panic(http.ErrAbortHandler)
 	}
 	handler.logAttachmentOperation(
 		request.Context(),

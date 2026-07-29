@@ -466,6 +466,9 @@ paths:
         a temporary DingTalk download URL. The temporary URL is consumed by the
         broker and is never included in the response. A template processCode
         beginning with PROC- is rejected before any DingTalk request is made.
+        If an upstream stream fails after response headers, the broker aborts the
+        HTTP transfer. Clients must treat an incomplete transfer as failed and
+        must not publish partial output.
       security:
         - bearerAuth: []
       parameters:

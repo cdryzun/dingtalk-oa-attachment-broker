@@ -612,7 +612,14 @@ func TestAttachmentAPIStructuredLogsCoverListAndStreamFailures(t *testing.T) {
 	)
 	streamRequest.Header.Set(requestIDHeader, "failed-stream")
 	streamResponse := httptest.NewRecorder()
-	handler.ServeHTTP(streamResponse, streamRequest)
+	var recovered any
+	func() {
+		defer func() { recovered = recover() }()
+		handler.ServeHTTP(streamResponse, streamRequest)
+	}()
+	if recovered != http.ErrAbortHandler {
+		t.Fatalf("stream panic = %#v; want http.ErrAbortHandler", recovered)
+	}
 	if streamResponse.Code != http.StatusOK || streamResponse.Body.String() != "da" {
 		t.Errorf(
 			"stream response = %d %q; want partial 200 response",
@@ -654,6 +661,44 @@ func TestAttachmentAPIStructuredLogsCoverListAndStreamFailures(t *testing.T) {
 	for _, forbidden := range []string{"private.xlsx", "private transport detail"} {
 		if strings.Contains(logOutput.String(), forbidden) {
 			t.Errorf("structured logs contain forbidden value %q", forbidden)
+		}
+	}
+}
+
+func TestAttachmentStreamFailureAbortsUnknownLengthResponse(t *testing.T) {
+	fakeAttachments := &fakeAttachmentService{
+		download: &attachments.Download{
+			Attachment: domain.Attachment{FileID: "file-id", FileName: "report.pdf"},
+			Body: io.NopCloser(&errorAfterReader{
+				content: "partial",
+				err:     domain.ErrTooLarge,
+			}),
+			ContentLength: -1,
+		},
+	}
+	handler := newTestHandlerWithServices(
+		t,
+		&fakeAuthService{user: domain.User{CorpID: "corp-id", UserID: "user-id"}},
+		fakeAttachments,
+	)
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	request, err := http.NewRequest(
+		http.MethodGet,
+		server.URL+"/api/v1/approvals/instance-id/attachments/file-id/content",
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer access-token")
+
+	response, requestErr := server.Client().Do(request)
+	if requestErr == nil {
+		defer response.Body.Close()
+		body, readErr := io.ReadAll(response.Body)
+		if readErr == nil {
+			t.Fatalf("read unknown-length stream = %q, nil; want transport failure", body)
 		}
 	}
 }

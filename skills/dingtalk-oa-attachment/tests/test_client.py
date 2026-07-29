@@ -1,4 +1,5 @@
 import hashlib
+import http.client
 import importlib.util
 import io
 import json
@@ -889,6 +890,58 @@ def test_download_rejects_invalid_stream_and_cleans_temporary_file(
             )
 
     assert captured.value.code == expected_code
+    assert not destination.exists()
+    assert list(tmp_path.glob("*.partial")) == []
+
+
+def test_download_rejects_interrupted_unknown_length_stream(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class BinaryHeaders:
+        def get_content_type(self) -> str:
+            return "application/octet-stream"
+
+        def get(self, name: str) -> None:
+            del name
+            return None
+
+    class InterruptedResponse:
+        headers = BinaryHeaders()
+
+        def __init__(self) -> None:
+            self.reads = 0
+
+        def __enter__(self) -> "InterruptedResponse":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            del args
+
+        def read(self, size: int) -> bytes:
+            del size
+            self.reads += 1
+            if self.reads == 1:
+                return b"partial"
+            raise http.client.IncompleteRead(b"")
+
+    client = CLIENT.BrokerClient(
+        "https://broker.example.test",
+        MemoryStore("access-new-secret", "refresh-new-secret"),
+    )
+    monkeypatch.setattr(client, "open_download", lambda *_: InterruptedResponse())
+    destination = tmp_path / "interrupted.bin"
+
+    with pytest.raises(CLIENT.ClientError) as captured:
+        CLIENT.command_download(
+            client,
+            "process-one",
+            "file-one",
+            destination,
+            overwrite=False,
+        )
+
+    assert captured.value.code == "download_failed"
     assert not destination.exists()
     assert list(tmp_path.glob("*.partial")) == []
 

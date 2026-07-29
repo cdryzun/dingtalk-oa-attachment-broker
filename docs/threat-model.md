@@ -40,7 +40,7 @@ flowchart LR
 | Signed URL disclosure | URL is never serialized |
 | SSRF and DNS rebinding | HTTPS, public IP allocation checks, no proxy |
 | Redirect to internal network | Every redirect and connection is revalidated |
-| Oversized stream | Length check, byte cap, and timeout |
+| Oversized or truncated stream | Byte cap and abort on stream error |
 | Response header injection | Filename and disposition sanitization |
 | Secret leakage in logs | Stable error classes and path-only request logging |
 | Credential replacement | Owner checks and private parent directory |

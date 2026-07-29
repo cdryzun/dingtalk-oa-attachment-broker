@@ -76,6 +76,8 @@ transient server failures so revocation can be retried.
 - close and synchronize the file;
 - atomically rename only after a successful stream;
 - remove the temporary file on failure;
+- treat any interrupted HTTP transfer as failure, including streams without a
+  `Content-Length`;
 - emit JSON containing destination, byte count, and SHA-256.
 
 The Skill should return broker problem `requestId` values for troubleshooting
