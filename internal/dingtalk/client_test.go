@@ -3,6 +3,7 @@ package dingtalk
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -75,6 +76,58 @@ func TestAppTokenCacheMergesConcurrentRefreshes(t *testing.T) {
 	}
 	if calls.Load() != 1 {
 		t.Errorf("cached app token fetches = %d; want 1", calls.Load())
+	}
+}
+
+func TestAppTokenCacheOwnerCancellationDoesNotFailOtherCallers(t *testing.T) {
+	var calls atomic.Int32
+	started := make(chan struct{})
+	release := make(chan struct{})
+	cache := newAppTokenCache(
+		func(ctx context.Context) (string, time.Duration, error) {
+			if calls.Add(1) == 1 {
+				close(started)
+			}
+			deadline, bounded := ctx.Deadline()
+			if !bounded || time.Until(deadline) > appTokenFetchTimeout {
+				return "", 0, errors.New("app token fetch context is not bounded")
+			}
+			select {
+			case <-ctx.Done():
+				return "", 0, ctx.Err()
+			case <-release:
+				return "app-token", time.Hour, nil
+			}
+		},
+		time.Now,
+		5*time.Minute,
+	)
+	ownerContext, cancelOwner := context.WithCancel(context.Background())
+	ownerResult := make(chan error, 1)
+	go func() {
+		_, err := cache.Token(ownerContext)
+		ownerResult <- err
+	}()
+	<-started
+	cancelOwner()
+	if err := <-ownerResult; !errors.Is(err, context.Canceled) {
+		t.Fatalf("owner Token() error = %v; want canceled", err)
+	}
+
+	liveResult := make(chan error, 1)
+	go func() {
+		token, err := cache.Token(context.Background())
+		if err == nil && token != "app-token" {
+			err = fmt.Errorf("Token() = %q; want app-token", token)
+		}
+		liveResult <- err
+	}()
+	close(release)
+	if err := <-liveResult; err != nil {
+		t.Fatalf("live Token() error = %v", err)
+	}
+	if calls.Load() != 1 {
+		t.Errorf("app token fetches = %d; want 1", calls.Load())
 	}
 }
 

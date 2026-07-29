@@ -7,6 +7,8 @@ import (
 	"time"
 )
 
+const appTokenFetchTimeout = 30 * time.Second
+
 type appTokenFetcher func(context.Context) (string, time.Duration, error)
 
 type tokenRefresh struct {
@@ -47,18 +49,19 @@ func (cache *appTokenCache) Token(ctx context.Context) (string, error) {
 	if cache.refresh != nil {
 		refresh := cache.refresh
 		cache.mu.Unlock()
-		select {
-		case <-ctx.Done():
-			return "", ctx.Err()
-		case <-refresh.done:
-			return refresh.token, refresh.err
-		}
+		return waitForTokenRefresh(ctx, refresh)
 	}
 
 	refresh := &tokenRefresh{done: make(chan struct{})}
 	cache.refresh = refresh
 	cache.mu.Unlock()
+	go cache.fetchToken(refresh)
+	return waitForTokenRefresh(ctx, refresh)
+}
 
+func (cache *appTokenCache) fetchToken(refresh *tokenRefresh) {
+	ctx, cancel := context.WithTimeout(context.Background(), appTokenFetchTimeout)
+	defer cancel()
 	token, ttl, err := cache.fetch(ctx)
 
 	cache.mu.Lock()
@@ -67,10 +70,8 @@ func (cache *appTokenCache) Token(ctx context.Context) (string, error) {
 		cache.token = token
 		cache.expiresAt = now.Add(ttl)
 		refresh.token = token
-		refresh.err = nil
 	} else if cache.token != "" && cache.expiresAt.After(now) {
 		refresh.token = cache.token
-		refresh.err = nil
 	} else {
 		if err == nil {
 			err = fmt.Errorf("app token endpoint returned an invalid token lifetime")
@@ -81,5 +82,13 @@ func (cache *appTokenCache) Token(ctx context.Context) (string, error) {
 	cache.refresh = nil
 	close(refresh.done)
 	cache.mu.Unlock()
-	return refresh.token, refresh.err
+}
+
+func waitForTokenRefresh(ctx context.Context, refresh *tokenRefresh) (string, error) {
+	select {
+	case <-ctx.Done():
+		return "", ctx.Err()
+	case <-refresh.done:
+		return refresh.token, refresh.err
+	}
 }
