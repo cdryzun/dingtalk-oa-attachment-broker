@@ -55,10 +55,10 @@ the broker. It never accepts a client-supplied DingTalk `processCode`.
 
 The client stores one broker-scoped, versioned session document in
 `.runtime/auth.json` inside the Skill. This local plaintext file is ignored by
-Git and must not be copied, shared, or committed. On Unix, the directory uses
-mode `0700`; the file uses mode `0600`, and the client rejects broader group or
-other permissions. Windows relies on the current user's filesystem access
-controls.
+Git and must not be copied, shared, or committed. On Unix, the directory must
+belong to the current user and must not be group- or world-writable. The client
+uses directory mode `0700` and file mode `0600`, and rejects insecure ownership
+or permissions. Windows relies on the current user's filesystem access controls.
 
 An HTTP 401 triggers one refresh attempt and an atomic replacement of the JSON
 file. An expired or revoked refresh token returns

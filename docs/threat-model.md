@@ -38,11 +38,12 @@ flowchart LR
 | Horizontal approval access | Default-deny participant policy |
 | Cross-approval file substitution | Fresh approval and file membership |
 | Signed URL disclosure | URL is never serialized |
-| SSRF and DNS rebinding | HTTPS, public IP validation, no proxy |
+| SSRF and DNS rebinding | HTTPS, public IP allocation checks, no proxy |
 | Redirect to internal network | Every redirect and connection is revalidated |
 | Oversized stream | Length check, byte cap, and timeout |
 | Response header injection | Filename and disposition sanitization |
 | Secret leakage in logs | Stable error classes and path-only request logging |
+| Credential replacement | Owner checks and private parent directory |
 | Forwarded address spoofing | Trust headers only from configured proxy CIDRs |
 | Public telemetry disclosure | Private listener and restricted network path |
 | Expired credential metadata growth | Bounded expired-record retention |

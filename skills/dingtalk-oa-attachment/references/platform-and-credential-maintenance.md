@@ -110,8 +110,10 @@ export DINGTALK_OA_CREDENTIAL_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/dingta
 The file is intentionally plaintext JSON and must remain local to one operating
 system user. Never commit, upload, email, display, or copy it to another user.
 Never place it in cloud sync, a network share, or a shared home directory. On
-Unix, retain directory mode `0700` and file mode `0600`. On Windows, keep it
-below `%LOCALAPPDATA%` and rely on the current user's NTFS access controls.
+Unix, the parent directory and file must belong to the current user. Keep the
+directory non-writable by group or others, normally mode `0700`, and the file at
+mode `0600`. On Windows, keep it below `%LOCALAPPDATA%` and rely on the current
+user's NTFS access controls.
 
 The file contains a schema version and canonical Broker origin. Do not edit it
 by hand. Use a different absolute path for each tested DingTalk identity and do

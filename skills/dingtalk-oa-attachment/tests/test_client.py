@@ -1239,6 +1239,32 @@ def test_json_credentials_reject_insecure_unix_permissions(
     assert "insecure permissions" in captured.value.detail
 
 
+@pytest.mark.parametrize("operation", ["load", "delete", "save"])
+def test_json_credentials_reject_writable_unix_parent(
+    tmp_path: Path,
+    operation: str,
+) -> None:
+    if os.name == "nt":
+        pytest.skip("Unix permission bits are not authoritative on Windows.")
+
+    credential_file = tmp_path / ".runtime" / "auth.json"
+    store = CLIENT.JsonCredentialStore(
+        "https://broker.example.test",
+        credential_file,
+    )
+    store.save("access-sensitive", "refresh-sensitive")
+    credential_file.parent.chmod(0o777)
+
+    with pytest.raises(CLIENT.ClientError) as captured:
+        if operation == "save":
+            store.save("replacement-access", "replacement-refresh")
+        else:
+            getattr(store, operation)()
+
+    assert captured.value.code == "credential_store_error"
+    assert "parent directory has insecure" in captured.value.detail
+
+
 def test_json_credentials_clean_partial_file_after_write_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

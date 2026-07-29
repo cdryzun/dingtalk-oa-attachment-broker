@@ -22,6 +22,7 @@ func TestValidatePublicIPRejectsNonPublicDestinations(t *testing.T) {
 	}{
 		{address: "8.8.8.8"},
 		{address: "1.1.1.1"},
+		{address: "2606:4700:4700::1111"},
 		{address: "127.0.0.1", wantErr: true},
 		{address: "10.0.0.1", wantErr: true},
 		{address: "172.16.0.1", wantErr: true},
@@ -32,6 +33,13 @@ func TestValidatePublicIPRejectsNonPublicDestinations(t *testing.T) {
 		{address: "fc00::1", wantErr: true},
 		{address: "fe80::1", wantErr: true},
 		{address: "ff02::1", wantErr: true},
+		{address: "64:ff9b::808:808", wantErr: true},
+		{address: "100:0:0:1::1", wantErr: true},
+		{address: "2001::1", wantErr: true},
+		{address: "2002:0808:0808::1", wantErr: true},
+		{address: "3fff::1", wantErr: true},
+		{address: "5f00::1", wantErr: true},
+		{address: "fec0::1", wantErr: true},
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.address, func(t *testing.T) {

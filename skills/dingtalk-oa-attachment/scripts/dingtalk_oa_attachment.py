@@ -108,6 +108,14 @@ class JsonCredentialStore(CredentialStore):
                 "credential_store_error",
                 "The local credential cache parent must be a real directory.",
             )
+        if not IS_WINDOWS and (
+            parent_stat.st_uid != os.getuid() or parent_stat.st_mode & 0o022
+        ):
+            raise ClientError(
+                "credential_store_error",
+                "The local credential cache parent directory has insecure "
+                "ownership or permissions.",
+            )
 
     def load(self) -> Credentials:
         try:
@@ -125,11 +133,17 @@ class JsonCredentialStore(CredentialStore):
                     "credential_store_error",
                     "The local credential cache is too large.",
                 )
-            if not IS_WINDOWS and file_stat.st_mode & 0o077:
-                raise ClientError(
-                    "credential_store_error",
-                    "The local credential cache has insecure permissions.",
-                )
+            if not IS_WINDOWS:
+                if file_stat.st_uid != os.getuid():
+                    raise ClientError(
+                        "credential_store_error",
+                        "The local credential cache is not owned by the current user.",
+                    )
+                if file_stat.st_mode & 0o077:
+                    raise ClientError(
+                        "credential_store_error",
+                        "The local credential cache has insecure permissions.",
+                    )
             with self.path.open("r", encoding="utf-8") as credential_stream:
                 payload = json.load(credential_stream)
         except ClientError:
@@ -237,6 +251,11 @@ class JsonCredentialStore(CredentialStore):
             raise ClientError(
                 "credential_store_error",
                 "The local credential cache must be a regular file.",
+            )
+        if not IS_WINDOWS and file_stat.st_uid != os.getuid():
+            raise ClientError(
+                "credential_store_error",
+                "The local credential cache is not owned by the current user.",
             )
         try:
             self.path.unlink()

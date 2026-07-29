@@ -195,6 +195,9 @@ func validatePublicIP(ip net.IP) error {
 		ip.IsMulticast() {
 		return fmt.Errorf("%w: download target is not a public IP address", domain.ErrForbidden)
 	}
+	if ip.To4() == nil && !publicIPv6Network.Contains(ip) {
+		return fmt.Errorf("%w: download target is outside the public IPv6 allocation", domain.ErrForbidden)
+	}
 	for _, network := range reservedNetworks {
 		if network.Contains(ip) {
 			return fmt.Errorf("%w: download target is a reserved IP address", domain.ErrForbidden)
@@ -202,6 +205,8 @@ func validatePublicIP(ip net.IP) error {
 	}
 	return nil
 }
+
+var publicIPv6Network = mustNetworks("2000::/3")[0]
 
 var reservedNetworks = mustNetworks(
 	"0.0.0.0/8",
@@ -213,9 +218,10 @@ var reservedNetworks = mustNetworks(
 	"198.51.100.0/24",
 	"203.0.113.0/24",
 	"240.0.0.0/4",
-	"64:ff9b:1::/48",
-	"100::/64",
+	"2001::/23",
 	"2001:db8::/32",
+	"2002::/16",
+	"3fff::/20",
 )
 
 func mustNetworks(values ...string) []*net.IPNet {
