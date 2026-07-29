@@ -35,6 +35,7 @@ MAX_JSON_RESPONSE_BYTES = 4 * 1024 * 1024
 MAX_KEYWORD_CHARACTERS = 100
 MAX_CATEGORY_DISCOVERY_PAGES = 100
 DEFAULT_TIMEOUT_SECONDS = 30.0
+MAX_RETRY_AFTER_SECONDS = 3_600
 IS_WINDOWS = os.name == "nt"
 
 
@@ -48,12 +49,14 @@ class ClientError(Exception):
         *,
         status: Optional[int] = None,
         request_id: Optional[str] = None,
+        retry_after_seconds: Optional[int] = None,
     ) -> None:
         super().__init__(detail)
         self.code = code
         self.detail = detail
         self.status = status
         self.request_id = request_id
+        self.retry_after_seconds = retry_after_seconds
 
 
 @dataclass(frozen=True)
@@ -553,9 +556,11 @@ def validate_broker_url(value: Optional[str]) -> str:
         )
     if not hostname or port is not None and not (1 <= port <= 65_535):
         raise ClientError("invalid_broker_url", "Broker URL authority is invalid.")
-    return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, "", "", "")).rstrip(
-        "/"
-    )
+    default_port = {"http": 80, "https": 443}[parsed.scheme]
+    authority = f"[{hostname}]" if ":" in hostname else hostname
+    if port is not None and port != default_port:
+        authority = f"{authority}:{port}"
+    return urllib.parse.urlunsplit((parsed.scheme, authority, "", "", ""))
 
 
 def select_credential_store(
@@ -1009,6 +1014,13 @@ def _http_client_error(error: urllib.error.HTTPError) -> ClientError:
     request_id = error.headers.get("X-Request-ID")
     code = f"http_{error.code}"
     detail = f"Broker returned HTTP {error.code}."
+    retry_after_seconds: Optional[int] = None
+    try:
+        candidate_retry_after = int(error.headers.get("Retry-After", ""))
+        if 1 <= candidate_retry_after <= MAX_RETRY_AFTER_SECONDS:
+            retry_after_seconds = candidate_retry_after
+    except (TypeError, ValueError):
+        pass
     try:
         raw = error.read(MAX_ERROR_BYTES + 1)
         if len(raw) <= MAX_ERROR_BYTES:
@@ -1032,6 +1044,7 @@ def _http_client_error(error: urllib.error.HTTPError) -> ClientError:
         detail,
         status=error.code,
         request_id=request_id,
+        retry_after_seconds=retry_after_seconds,
     )
 
 
@@ -1489,6 +1502,8 @@ def main(argv: Optional[list[str]] = None) -> int:
             payload["status"] = error.status
         if error.request_id:
             payload["requestId"] = error.request_id
+        if error.retry_after_seconds is not None:
+            payload["retryAfterSeconds"] = error.retry_after_seconds
         emit_json(payload, stream=sys.stderr)
         return 1
     except KeyboardInterrupt:

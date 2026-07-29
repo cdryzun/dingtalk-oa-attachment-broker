@@ -140,7 +140,7 @@ Optional values:
 | `DOWNLOAD_TIMEOUT` | `10m` | End-to-end attachment deadline |
 | `DOWNLOAD_MAX_BYTES` | `209715200` | Maximum streamed attachment bytes |
 | `DOWNLOAD_CONCURRENCY_PER_USER` | `5` | Active streams allowed per user |
-| `REQUESTS_PER_MINUTE` | `120` | Per-replica, per-source request limit |
+| `REQUESTS_PER_MINUTE` | `120` | Per-source limit, including `/readyz` |
 | `TRUSTED_PROXY_CIDRS` | empty | Proxies allowed to supply client addresses |
 | `AUDIT_RETENTION` | `4320h` | Audit retention interval |
 | `AUTH_RECORD_RETENTION` | `168h` | Expired authentication record retention |

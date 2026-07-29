@@ -22,6 +22,8 @@ default. When `TRUSTED_PROXY_CIDRS` is configured, a valid right-to-left
 The public port returns `404` for `/metrics`. Prometheus must reach the private
 listener through a restricted network path. Probe the public `/readyz` endpoint
 separately to detect TLS, DNS, proxy, and external routing failures.
+Readiness is subject to the per-source request limit because it queries
+PostgreSQL; liveness remains exempt. A 429 response includes `Retry-After`.
 
 Authenticated attachment APIs also emit one business event when the operation
 finishes:

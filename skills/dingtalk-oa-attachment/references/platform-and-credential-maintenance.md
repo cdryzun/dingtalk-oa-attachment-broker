@@ -42,6 +42,8 @@ Replace the example with the exact self-hosted origin. The CLI also accepts the
 global `--broker-url` option. An absent origin returns `missing_broker_url`.
 The client permits HTTPS origins and loopback HTTP for local tests; it rejects
 credentials, paths, queries, fragments, and non-loopback HTTP.
+Hostnames are lowercased and explicit default ports are removed before the
+origin is bound to a credential file.
 
 Each credential file is bound to one canonical Broker origin. The client
 rejects a file created for a different origin. Never infer an origin from a

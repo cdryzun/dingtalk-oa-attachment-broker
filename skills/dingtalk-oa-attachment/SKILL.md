@@ -83,8 +83,9 @@ distributing a release.
    IDs. A visible template may have zero recent approvals with attachments.
 3. Follow `nextCursor` until it is absent or the user-approved scan bound is
    reached. An empty `items` page with a `nextCursor` is not evidence that the
-   category has no accessible approvals. Honor 429 retry timing; do not restart
-   concurrent scans to bypass the user rate limit.
+   category has no accessible approvals. On 429, wait the returned
+   `retryAfterSeconds`; do not restart concurrent scans to bypass the user rate
+   limit.
 4. Combine multi-category results, deduplicate by `processInstanceId`, and sort
    by `createTime` descending unless the user requests another order. Before
    asking the user to select an approval, always show its `businessId`, title,

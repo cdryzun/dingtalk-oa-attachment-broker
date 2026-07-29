@@ -8,6 +8,7 @@ import subprocess
 import sys
 import threading
 import urllib.parse
+import urllib.error
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -377,6 +378,8 @@ def fixture_server() -> Iterator[tuple[str, dict[str, Any]]]:
         ("https://broker.example.test/", "https://broker.example.test"),
         ("http://127.0.0.1:8080", "http://127.0.0.1:8080"),
         ("http://localhost", "http://localhost"),
+        ("https://BROKER.EXAMPLE.TEST:443", "https://broker.example.test"),
+        ("http://LOCALHOST:80", "http://localhost"),
     ],
 )
 def test_validate_broker_url_accepts_secure_origins(
@@ -384,6 +387,32 @@ def test_validate_broker_url_accepts_secure_origins(
     expected: str,
 ) -> None:
     assert CLIENT.validate_broker_url(value) == expected
+
+
+def test_json_credentials_bind_to_canonical_broker_origin(tmp_path: Path) -> None:
+    credential_file = tmp_path / ".runtime" / "auth.json"
+    first = CLIENT.JsonCredentialStore("https://BROKER.EXAMPLE.TEST:443", credential_file)
+    first.save("access-sensitive", "refresh-sensitive")
+
+    second = CLIENT.JsonCredentialStore("https://broker.example.test", credential_file)
+    assert second.load() == CLIENT.Credentials("access-sensitive", "refresh-sensitive")
+
+
+def test_http_error_preserves_bounded_retry_after() -> None:
+    body = io.BytesIO(
+        json.dumps({"code": "rate_limited", "detail": "retry later"}).encode("utf-8")
+    )
+    error = urllib.error.HTTPError(
+        "https://broker.example.test/api/v1/me",
+        429,
+        "Too Many Requests",
+        {"Retry-After": "60", "X-Request-ID": "request-id"},
+        body,
+    )
+
+    result = CLIENT._http_client_error(error)
+
+    assert result.retry_after_seconds == 60
 
 
 @pytest.mark.parametrize(
@@ -1501,6 +1530,28 @@ def test_main_my_categories_rejects_cursor_with_filters(
     assert exit_code == 1
     result = json.loads(capsys.readouterr().err)
     assert result["code"] == "invalid_category_parameters"
+
+
+def test_main_emits_retry_after_seconds(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def fail_with_rate_limit(client: Any) -> None:
+        del client
+        raise CLIENT.ClientError(
+            "rate_limited",
+            "retry later",
+            status=429,
+            retry_after_seconds=60,
+        )
+
+    monkeypatch.setattr(CLIENT, "command_auth_status", fail_with_rate_limit)
+    exit_code = CLIENT.main(
+        ["--broker-url", "https://broker.example.test", "auth-status"]
+    )
+
+    assert exit_code == 1
+    assert json.loads(capsys.readouterr().err)["retryAfterSeconds"] == 60
 
 
 def test_main_auth_status_uses_explicit_credential_file(
