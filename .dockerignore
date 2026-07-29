@@ -1,0 +1,12 @@
+.git
+.gitignore
+.gitlab-ci.yml
+.DS_Store
+.env
+broker.env
+bin
+coverage.out
+.coverage
+.pytest_cache
+**/__pycache__
+skills/dingtalk-oa-attachment/.runtime

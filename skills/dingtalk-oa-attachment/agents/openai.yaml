@@ -1,0 +1,20 @@
+interface:
+  display_name: "DingTalk OA Attachments"
+  short_description: "Search and download authorized DingTalk OA attachments"
+  default_prompt: >-
+    Use $dingtalk-oa-attachment with the operator-configured
+    DINGTALK_OA_BROKER_URL or an explicit --broker-url and its per-user local
+    JSON session. Stop with missing_broker_url when no origin is configured;
+    never guess or discover a Broker and never request a DingTalk AppKey or
+    AppSecret. Start with auth-status, then run my-categories --all and search
+    only with opaque category IDs returned for the current user. When a
+    natural-language request matches several categories, search every matching
+    category. An empty items page is not a final empty result while nextCursor
+    exists; continue bounded pagination, honor 429 retry timing, deduplicate by
+    processInstanceId, and sort combined approvals by createTime descending.
+    Present businessId, title, status, createTime, and processInstanceId
+    together. Never pass a processCode or a value beginning with PROC- as a
+    processInstanceId. Use only the exact processInstanceId and fileId for list
+    or download, preserve no-overwrite behavior, and choose platform-appropriate
+    Python commands and credential paths. Run logout only when the user
+    explicitly asks to end the Broker session.
