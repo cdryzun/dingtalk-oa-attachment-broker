@@ -281,6 +281,10 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "429":
           $ref: "#/components/responses/RateLimited"
+        "502":
+          $ref: "#/components/responses/UpstreamError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /api/v1/me/approval-categories:
     get:
       tags:
@@ -470,6 +474,8 @@ paths:
           $ref: "#/components/responses/RateLimited"
         "502":
           $ref: "#/components/responses/UpstreamError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /api/v1/approvals/{processInstanceId}/attachments/{fileId}/content:
     get:
       tags:
