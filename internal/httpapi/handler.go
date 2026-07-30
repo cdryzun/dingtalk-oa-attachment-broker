@@ -1144,6 +1144,15 @@ func errorCode(err error) string {
 	return problemForError(err).Code
 }
 
+func metricMethod(method string) string {
+	switch method {
+	case http.MethodGet, http.MethodPost, http.MethodDelete:
+		return method
+	default:
+		return "other"
+	}
+}
+
 type statusResponseWriter struct {
 	http.ResponseWriter
 	status int
@@ -1218,6 +1227,7 @@ func (metrics *metrics) observeRequest(
 	status int,
 	duration time.Duration,
 ) {
+	method = metricMethod(method)
 	metrics.requests.WithLabelValues(method, route, strconv.Itoa(status)).Inc()
 	metrics.duration.WithLabelValues(method, route).Observe(duration.Seconds())
 }

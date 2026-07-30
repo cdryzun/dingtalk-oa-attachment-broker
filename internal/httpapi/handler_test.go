@@ -129,6 +129,24 @@ func TestMetricsAreServedOnlyByDedicatedHandler(t *testing.T) {
 	}
 }
 
+func TestMetricsBoundUnrecognizedHTTPMethods(t *testing.T) {
+	handler := newTestHandler(t)
+	for _, method := range []string{"X-ATTACK-ONE", "X-ATTACK-TWO"} {
+		request := httptest.NewRequest(method, "/missing", nil)
+		handler.ServeHTTP(httptest.NewRecorder(), request)
+	}
+	metricsProvider := handler.(interface{ MetricsHandler() http.Handler })
+	response := httptest.NewRecorder()
+	metricsProvider.MetricsHandler().ServeHTTP(
+		response,
+		httptest.NewRequest(http.MethodGet, "/metrics", nil),
+	)
+	body := response.Body.String()
+	if strings.Contains(body, "X-ATTACK") || !strings.Contains(body, `method="other"`) {
+		t.Fatalf("metrics expose unbounded method labels:\n%s", body)
+	}
+}
+
 func TestRateLimitUsesForwardedClientOnlyForTrustedProxy(t *testing.T) {
 	tests := []struct {
 		name           string
