@@ -110,8 +110,8 @@ func TestAppTokenCacheOwnerCancellationDoesNotFailOtherCallers(t *testing.T) {
 	}()
 	<-started
 	cancelOwner()
-	if err := <-ownerResult; !errors.Is(err, context.Canceled) {
-		t.Fatalf("owner Token() error = %v; want canceled", err)
+	if err := <-ownerResult; !errors.Is(err, context.Canceled) || !errors.Is(err, domain.ErrUnavailable) {
+		t.Fatalf("owner Token() error = %v; want unavailable and canceled", err)
 	}
 
 	liveResult := make(chan error, 1)

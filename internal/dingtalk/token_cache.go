@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/cdryzun/dingtalk-oa-attachment-broker/internal/domain"
 )
 
 const appTokenFetchTimeout = 30 * time.Second
@@ -93,7 +95,7 @@ func (cache *appTokenCache) fetchToken(refresh *tokenRefresh) {
 func waitForTokenRefresh(ctx context.Context, refresh *tokenRefresh) (string, error) {
 	select {
 	case <-ctx.Done():
-		return "", ctx.Err()
+		return "", fmt.Errorf("%w: wait for app token refresh: %w", domain.ErrUnavailable, ctx.Err())
 	case <-refresh.done:
 		return refresh.token, refresh.err
 	}
