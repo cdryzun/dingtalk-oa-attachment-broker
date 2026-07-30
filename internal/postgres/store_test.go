@@ -40,6 +40,7 @@ func TestMain(testingMain *testing.M) {
 	database := embeddedpostgres.NewDatabase(
 		embeddedpostgres.DefaultConfig().
 			Version(embeddedpostgres.V17).
+			BinaryRepositoryURL("https://repo.maven.apache.org/maven2").
 			Port(port).
 			Username("postgres").
 			Password("postgres").
