@@ -244,7 +244,7 @@ class JsonCredentialStore(CredentialStore):
             if temporary_path is not None:
                 try:
                     temporary_path.unlink()
-                except FileNotFoundError:
+                except OSError:
                     pass
 
     def delete(self) -> bool:

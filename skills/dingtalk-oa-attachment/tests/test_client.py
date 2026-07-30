@@ -1564,6 +1564,34 @@ def test_json_credentials_reject_symbolic_link_parent_on_save(
     assert not (target_directory / "auth.json").exists()
 
 
+def test_json_credentials_preserve_save_error_when_cleanup_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    credential_file = tmp_path / ".runtime" / "auth.json"
+    credential_file.parent.mkdir()
+    store = CLIENT.JsonCredentialStore(
+        "https://broker.example.test",
+        credential_file,
+    )
+
+    def fail_replace(*_args: Any) -> None:
+        raise OSError("replace failed")
+
+    def fail_unlink(*_args: Any, **_kwargs: Any) -> None:
+        raise OSError("cleanup failed")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(CLIENT.os, "replace", fail_replace)
+        patch.setattr(Path, "unlink", fail_unlink)
+        with pytest.raises(CLIENT.ClientError) as captured:
+            store.save("access-sensitive", "refresh-sensitive")
+
+    assert captured.value.code == "credential_store_error"
+    for partial in credential_file.parent.glob("*.partial"):
+        partial.unlink()
+
+
 def test_json_credentials_reject_oversized_cache(tmp_path: Path) -> None:
     credential_file = tmp_path / ".runtime" / "auth.json"
     credential_file.parent.mkdir()
