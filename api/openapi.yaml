@@ -44,6 +44,29 @@ paths:
     get:
       tags:
         - Authentication
+      operationId: showDingTalkAuthorizationStart
+      summary: Show a user-confirmed DingTalk authorization start
+      parameters:
+        - name: user_code
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: "^[A-Z2-9]{4}-[A-Z2-9]{4}$"
+      responses:
+        "200":
+          description: Confirmation page that submits the authorization start.
+          content:
+            text/html:
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    post:
+      tags:
+        - Authentication
       operationId: startDingTalkAuthorization
       summary: Bind a user code and redirect to DingTalk
       parameters:
@@ -70,6 +93,8 @@ paths:
           $ref: "#/components/responses/Conflict"
         "410":
           $ref: "#/components/responses/Expired"
+        "429":
+          $ref: "#/components/responses/RateLimited"
   /auth/dingtalk/callback:
     get:
       tags:
@@ -114,6 +139,10 @@ paths:
           $ref: "#/components/responses/Expired"
         "502":
           $ref: "#/components/responses/UpstreamError"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /api/v1/device-authorizations/token:
     post:
       tags:

@@ -41,6 +41,8 @@ sequenceDiagram
     Broker->>DB: Store HMAC(device code), user code, expiry
     Broker-->>Client: Device code and verification URI
     User->>Broker: GET /auth/dingtalk/start?user_code=...
+    Broker-->>User: 200 confirmation form
+    User->>Broker: POST confirmed authorization start
     Broker->>DB: Bind single-use HMAC(OAuth state)
     Broker-->>User: 303 DingTalk authorization
     User->>DingTalk: Authenticate and consent

@@ -117,9 +117,10 @@ python3 scripts/dingtalk_oa_attachment.py login
 
 Use `py -3` instead of `python3` on Windows. The command emits JSON Lines
 containing the verification URL, `browserOpenAttempted`, and `browserOpened`.
-It opens the URL unless `--no-open` is supplied. If the page is blank or
-`browserOpened` is false, copy `verificationUriComplete` into Edge or Chrome
-and select the DingTalk avatar. Never ask the user for an AppKey or AppSecret.
+It opens the URL unless `--no-open` is supplied. Select **Continue to DingTalk**
+on the Broker page, then select the DingTalk avatar. If `browserOpened` is false,
+copy `verificationUriComplete` into Edge or Chrome. Never ask the user for an
+AppKey or AppSecret.
 
 A successful login creates or atomically replaces the configured JSON
 credential file. Validate the result:

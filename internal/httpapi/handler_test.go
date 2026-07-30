@@ -330,11 +330,33 @@ func TestDeviceAuthorizationAndOAuthRoutes(t *testing.T) {
 	)
 	startResponse := httptest.NewRecorder()
 	handler.ServeHTTP(startResponse, startRequest)
-	if startResponse.Code != http.StatusSeeOther {
-		t.Fatalf("start status = %d; want 303", startResponse.Code)
+	if startResponse.Code != http.StatusOK ||
+		!strings.Contains(startResponse.Body.String(), "Continue to DingTalk") {
+		t.Fatalf("start page = %d %s; want confirmation form", startResponse.Code, startResponse.Body)
 	}
-	if startResponse.Header().Get("Location") != fakeAuth.startURL {
-		t.Errorf("start Location = %q", startResponse.Header().Get("Location"))
+	if fakeAuth.startCalls != 0 {
+		t.Fatalf("GET start calls = %d; want 0", fakeAuth.startCalls)
+	}
+	if startResponse.Header().Get("Content-Security-Policy") == "" {
+		t.Error("start page has no Content-Security-Policy")
+	}
+
+	startRequest = httptest.NewRequest(
+		http.MethodPost,
+		"/auth/dingtalk/start?user_code=ABCD-EFGH",
+		nil,
+	)
+	startResponse = httptest.NewRecorder()
+	handler.ServeHTTP(startResponse, startRequest)
+	if startResponse.Code != http.StatusSeeOther {
+		t.Fatalf("start submit status = %d; want 303", startResponse.Code)
+	}
+	if startResponse.Header().Get("Location") != fakeAuth.startURL || fakeAuth.startCalls != 1 {
+		t.Errorf(
+			"start Location = %q, calls = %d",
+			startResponse.Header().Get("Location"),
+			fakeAuth.startCalls,
+		)
 	}
 
 	callbackRequest := httptest.NewRequest(
@@ -1163,6 +1185,7 @@ type fakeAuthService struct {
 	deviceError       error
 	startURL          string
 	startError        error
+	startCalls        int
 	completeError     error
 	rejectState       string
 	rejectError       error
@@ -1181,6 +1204,7 @@ func (fake *fakeAuthService) CreateDeviceAuthorization(
 }
 
 func (fake *fakeAuthService) StartAuthorization(context.Context, string) (string, error) {
+	fake.startCalls++
 	return fake.startURL, fake.startError
 }
 

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"log/slog"
 	"mime"
@@ -198,7 +199,11 @@ func (handler *Handler) route(response http.ResponseWriter, request *http.Reques
 		}
 		handler.handleCreateDeviceAuthorization(response, request)
 	case "/auth/dingtalk/start":
-		if !allowMethod(response, request, http.MethodGet) {
+		if !allowMethod(response, request, http.MethodGet, http.MethodPost) {
+			return
+		}
+		if request.Method == http.MethodGet {
+			handler.handleAuthorizationStartPage(response, request)
 			return
 		}
 		handler.handleAuthorizationStart(response, request)
@@ -492,6 +497,38 @@ func (handler *Handler) handleCreateDeviceAuthorization(
 		return
 	}
 	writeJSON(response, http.StatusCreated, result)
+}
+
+func (handler *Handler) handleAuthorizationStartPage(
+	response http.ResponseWriter,
+	request *http.Request,
+) {
+	userCode := strings.TrimSpace(request.URL.Query().Get("user_code"))
+	if userCode == "" || len(userCode) > 64 {
+		writeProblem(
+			response,
+			request,
+			fmt.Errorf("%w: user code is required", domain.ErrInvalidInput),
+		)
+		return
+	}
+	action := html.EscapeString(
+		"/auth/dingtalk/start?user_code=" + url.QueryEscape(userCode),
+	)
+	response.Header().Set(
+		"Content-Security-Policy",
+		"default-src 'none'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+	)
+	response.Header().Set("Content-Type", "text/html; charset=utf-8")
+	response.WriteHeader(http.StatusOK)
+	_, _ = io.WriteString(
+		response,
+		"<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"+
+			"<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"+
+			"<title>DingTalk authorization</title></head><body><main>"+
+			"<h1>DingTalk authorization</h1><form method=\"post\" action=\""+action+"\">"+
+			"<button type=\"submit\">Continue to DingTalk</button></form></main></body></html>",
+	)
 }
 
 func (handler *Handler) handleAuthorizationStart(
@@ -909,12 +946,14 @@ func decodeJSON(response http.ResponseWriter, request *http.Request, destination
 func allowMethod(
 	response http.ResponseWriter,
 	request *http.Request,
-	method string,
+	methods ...string,
 ) bool {
-	if request.Method == method {
-		return true
+	for _, method := range methods {
+		if request.Method == method {
+			return true
+		}
 	}
-	response.Header().Set("Allow", method)
+	response.Header().Set("Allow", strings.Join(methods, ", "))
 	writeProblemSpec(response, request, problemSpec{
 		Status: http.StatusMethodNotAllowed,
 		Code:   "method_not_allowed",
