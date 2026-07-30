@@ -60,6 +60,7 @@ func NewSecureDownloader(timeout time.Duration, maxBytes int64) (*Downloader, er
 		Proxy:                 nil,
 		DialContext:           dialer.DialContext,
 		ForceAttemptHTTP2:     true,
+		DisableCompression:    true,
 		MaxIdleConns:          100,
 		MaxIdleConnsPerHost:   10,
 		IdleConnTimeout:       90 * time.Second,
@@ -99,6 +100,7 @@ func (downloader *Downloader) Open(
 		return nil, fmt.Errorf("%w: create attachment request: %v", domain.ErrInvalidInput, err)
 	}
 	request.Header.Set("Accept", "application/octet-stream, */*")
+	request.Header.Set("Accept-Encoding", "identity")
 
 	response, err := downloader.client.Do(request)
 	if err != nil {

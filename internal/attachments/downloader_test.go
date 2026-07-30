@@ -51,6 +51,42 @@ func TestValidatePublicIPRejectsNonPublicDestinations(t *testing.T) {
 	}
 }
 
+func TestSecureDownloaderPreservesEncodedAttachmentBytes(t *testing.T) {
+	downloader, err := NewSecureDownloader(time.Minute, 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport, ok := downloader.client.Transport.(*http.Transport)
+	if !ok || !transport.DisableCompression {
+		t.Fatalf("download transport = %#v; want compression disabled", downloader.client.Transport)
+	}
+
+	var acceptEncoding string
+	downloader = newDownloaderForTest(
+		&http.Client{Transport: roundTripperFunc(func(request *http.Request) (*http.Response, error) {
+			acceptEncoding = request.Header.Get("Accept-Encoding")
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader("attachment")),
+				Request:    request,
+			}, nil
+		})},
+		1024,
+	)
+	download, err := downloader.Open(
+		context.Background(),
+		mustURL(t, "https://download.example.test/file"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = download.Body.Close()
+	if acceptEncoding != "identity" {
+		t.Errorf("Accept-Encoding = %q; want identity", acceptEncoding)
+	}
+}
+
 func TestSecureDialerRejectsPrivateDNSAnswers(t *testing.T) {
 	dialer := secureDialer{
 		resolver: staticResolver{addresses: []net.IPAddr{{IP: net.ParseIP("127.0.0.1")}}},
