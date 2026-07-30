@@ -1046,6 +1046,11 @@ def _decode_json_response(response: Any) -> Dict[str, Any]:
                 "Broker JSON response is too large.",
             )
         payload = json.loads(raw)
+    except (OSError, http.client.HTTPException):
+        raise ClientError(
+            "network_error",
+            "Broker response was interrupted.",
+        ) from None
     except (UnicodeDecodeError, json.JSONDecodeError):
         raise ClientError("invalid_response", "Broker returned invalid JSON.") from None
     if not isinstance(payload, dict):
@@ -1081,10 +1086,13 @@ def _http_client_error(error: urllib.error.HTTPError) -> ClientError:
                     detail = candidate_detail
                 if isinstance(candidate_request_id, str) and candidate_request_id:
                     request_id = candidate_request_id
-    except (UnicodeDecodeError, json.JSONDecodeError, OSError):
+    except (UnicodeDecodeError, json.JSONDecodeError, OSError, http.client.HTTPException):
         pass
     finally:
-        error.close()
+        try:
+            error.close()
+        except (OSError, http.client.HTTPException):
+            pass
     return ClientError(
         code,
         detail,

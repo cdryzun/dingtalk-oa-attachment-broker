@@ -49,6 +49,11 @@ class JSONResponse(io.BytesIO):
     headers = JSONHeaders()
 
 
+class InterruptedJSONResponse(JSONResponse):
+    def read(self, _size: int = -1) -> bytes:
+        raise http.client.IncompleteRead(b"partial")
+
+
 class MemoryStore(CLIENT.CredentialStore):
     persistent = True
     name = "memory-test-store"
@@ -413,6 +418,21 @@ def test_http_error_preserves_bounded_retry_after() -> None:
     result = CLIENT._http_client_error(error)
 
     assert result.retry_after_seconds == 60
+
+
+def test_http_error_converts_interrupted_body_read() -> None:
+    error = urllib.error.HTTPError(
+        "https://broker.example.test/api/v1/me",
+        503,
+        "Service Unavailable",
+        {},
+        InterruptedJSONResponse(),
+    )
+
+    result = CLIENT._http_client_error(error)
+
+    assert result.code == "http_503"
+    assert result.status == 503
 
 
 @pytest.mark.parametrize(
@@ -1900,6 +1920,13 @@ def test_json_response_accepts_payload_larger_than_error_limit() -> None:
     payload = CLIENT._decode_json_response(response)
 
     assert len(payload["data"]) == CLIENT.MAX_ERROR_BYTES
+
+
+def test_json_response_converts_interrupted_read() -> None:
+    with pytest.raises(CLIENT.ClientError) as captured:
+        CLIENT._decode_json_response(InterruptedJSONResponse())
+
+    assert captured.value.code == "network_error"
 
 
 def test_json_response_rejects_payload_over_size_limit() -> None:
