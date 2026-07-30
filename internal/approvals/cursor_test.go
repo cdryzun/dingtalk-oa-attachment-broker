@@ -81,6 +81,33 @@ func TestCursorCodecEncodesCurrentSearchCursorWithSubjectBinding(t *testing.T) {
 	}
 }
 
+func TestCursorCodecPreservesCategoryCursorIssuance(t *testing.T) {
+	now := time.Date(2026, time.July, 20, 10, 0, 0, 0, time.UTC)
+	codec, err := newCursorCodec([]byte(strings.Repeat("k", 32)), func() time.Time {
+		return now
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	issuedAt := now.Add(-30 * time.Minute).Unix()
+	raw, err := codec.EncodeCategory(categoryCursorState{
+		SubjectHash:     strings.Repeat("b", 64),
+		CatalogRevision: strings.Repeat("a", 64),
+		Offset:          10,
+		IssuedAt:        issuedAt,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := codec.DecodeCategory(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decoded.IssuedAt != issuedAt {
+		t.Errorf("category cursor issuedAt = %d; want %d", decoded.IssuedAt, issuedAt)
+	}
+}
+
 func decodeCursorPayloadForTest(t *testing.T, raw string) []byte {
 	t.Helper()
 	parts := strings.Split(raw, cursorSeparator)

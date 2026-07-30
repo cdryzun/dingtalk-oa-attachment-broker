@@ -311,13 +311,23 @@ func TestSearchCursorPreservesExactHistoryBoundary(t *testing.T) {
 		t.Fatal(err)
 	}
 	searchNow = searchNow.Add(time.Second)
-	if _, err := service.Search(
+	second, err := service.Search(
 		context.Background(),
 		user,
 		SearchQuery{CategoryID: first.CategoryID, Cursor: first.NextCursor, Limit: 10},
 		"second",
+	)
+	if err != nil {
+		t.Fatalf("second cursor continuation error = %v", err)
+	}
+	searchNow = searchNow.Add(time.Second)
+	if _, err := service.Search(
+		context.Background(),
+		user,
+		SearchQuery{CategoryID: second.CategoryID, Cursor: second.NextCursor, Limit: 10},
+		"third",
 	); err != nil {
-		t.Fatalf("cursor continuation error = %v", err)
+		t.Fatalf("third cursor continuation error = %v", err)
 	}
 }
 

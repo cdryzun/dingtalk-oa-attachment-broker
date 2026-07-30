@@ -73,9 +73,10 @@ func newCursorCodec(key []byte, now func() time.Time) (*cursorCodec, error) {
 }
 
 func (codec *cursorCodec) Encode(state cursorState) (string, error) {
-	now := codec.now().UTC()
 	state.Version = cursorVersion
-	state.IssuedAt = now.Unix()
+	if state.IssuedAt == 0 {
+		state.IssuedAt = codec.now().UTC().Unix()
+	}
 	return codec.encodePayload(state, searchCursorErrorLabel)
 }
 
@@ -110,7 +111,9 @@ func (codec *cursorCodec) Decode(raw string) (cursorState, error) {
 
 func (codec *cursorCodec) EncodeCategory(state categoryCursorState) (string, error) {
 	state.Version = categoryCursorVersion
-	state.IssuedAt = codec.now().UTC().Unix()
+	if state.IssuedAt == 0 {
+		state.IssuedAt = codec.now().UTC().Unix()
+	}
 	return codec.encodePayload(state, categoryCursorErrorLabel)
 }
 
