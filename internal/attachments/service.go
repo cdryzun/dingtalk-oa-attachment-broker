@@ -201,6 +201,18 @@ func (service *Service) Download(
 		)
 	}
 	if attachment.FileSize > 0 {
+		if download.MaxBytes > 0 && attachment.FileSize > download.MaxBytes {
+			_ = download.Body.Close()
+			return nil, service.deny(
+				ctx,
+				user,
+				"attachments.download",
+				processInstanceID,
+				fileID,
+				requestID,
+				fmt.Errorf("%w: attachment exceeds configured limit", domain.ErrTooLarge),
+			)
+		}
 		if download.ContentLength >= 0 && download.ContentLength != attachment.FileSize {
 			_ = download.Body.Close()
 			return nil, service.deny(

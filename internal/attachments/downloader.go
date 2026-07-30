@@ -23,6 +23,7 @@ type Download struct {
 	Body          io.ReadCloser
 	ContentType   string
 	ContentLength int64
+	MaxBytes      int64
 }
 
 type Downloader struct {
@@ -145,6 +146,7 @@ func (downloader *Downloader) Open(
 		Body:          &limitedReadCloser{body: response.Body, remaining: downloader.maxBytes},
 		ContentType:   response.Header.Get("Content-Type"),
 		ContentLength: response.ContentLength,
+		MaxBytes:      downloader.maxBytes,
 	}, nil
 }
 

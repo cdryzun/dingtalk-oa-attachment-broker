@@ -228,12 +228,14 @@ func TestDownloadEnforcesApprovalAttachmentSize(t *testing.T) {
 		name          string
 		body          string
 		contentLength int64
+		maxBytes      int64
 		wantReadError error
 		wantOpenError error
 	}{
 		{name: "short unknown-length stream", body: "123", contentLength: -1, wantReadError: io.ErrUnexpectedEOF},
 		{name: "long unknown-length stream", body: "123456", contentLength: -1, wantReadError: domain.ErrUpstream},
 		{name: "declared length mismatch", body: "123", contentLength: 3, wantOpenError: domain.ErrUpstream},
+		{name: "metadata exceeds limit", body: "12345", contentLength: -1, maxBytes: 4, wantOpenError: domain.ErrTooLarge},
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -248,6 +250,7 @@ func TestDownloadEnforcesApprovalAttachmentSize(t *testing.T) {
 				Downloader: &fakeDownloader{response: &Download{
 					Body:          body,
 					ContentLength: testCase.contentLength,
+					MaxBytes:      testCase.maxBytes,
 				}},
 				Audit:               &recordingAuditRepository{},
 				DownloadConcurrency: 1,
