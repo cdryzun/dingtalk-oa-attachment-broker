@@ -463,6 +463,13 @@ class BrokerClient:
             session = self.refresh_session(credentials.refresh_token)
         except ClientError as error:
             if error.status in {401, 409, 410}:
+                replacement = self.store.load()
+                if replacement != credentials and replacement.access_token:
+                    return self._open(
+                        method,
+                        path,
+                        bearer=replacement.access_token,
+                    )
                 raise ClientError(
                     "reauthentication_required",
                     "The Broker session expired; run login again.",

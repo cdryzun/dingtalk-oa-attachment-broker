@@ -633,6 +633,22 @@ def test_expired_refresh_token_requires_new_login() -> None:
     assert state["authorizations"] == ["Bearer access-old-secret"]
 
 
+def test_stale_refresh_uses_credentials_saved_by_another_process() -> None:
+    with fixture_server() as (origin, _):
+        store = MemoryStore("access-old-secret", "refresh-old-secret")
+        client = CLIENT.BrokerClient(origin, store)
+
+        def stale_refresh(_refresh_token: str) -> dict[str, Any]:
+            store.save("access-new-secret", "refresh-new-secret")
+            raise CLIENT.ClientError("unauthorized", "stale", status=401)
+
+        client.refresh_session = stale_refresh  # type: ignore[method-assign]
+        identity = client.current_identity()
+
+    assert identity["data"]["userId"] == "user-fixture"
+    assert store.saved == [("access-new-secret", "refresh-new-secret")]
+
+
 def test_login_stores_tokens_without_printing_them(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
