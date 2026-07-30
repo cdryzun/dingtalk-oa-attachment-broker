@@ -21,8 +21,8 @@ github.com/alibabacloud-go/debug v0.0.0-20190504072949-9472017b5c68/go.mod h1:6p
 github.com/alibabacloud-go/debug v1.0.0/go.mod h1:8gfgZCCAC3+SCzjWtY053FrOcd4/qlH6IHTI4QyICOc=
 github.com/alibabacloud-go/debug v1.0.1 h1:MsW9SmUtbb1Fnt3ieC6NNZi6aEwrXfDksD4QA6GSbPg=
 github.com/alibabacloud-go/debug v1.0.1/go.mod h1:8gfgZCCAC3+SCzjWtY053FrOcd4/qlH6IHTI4QyICOc=
-github.com/alibabacloud-go/dingtalk v1.7.41 h1:pqR9bc3ntYvzy9oSg0W1v3T3BdRCOTqAtYD8ZpIO+ag=
-github.com/alibabacloud-go/dingtalk v1.7.41/go.mod h1:uP5klG3rdfmG3sjk9c7WpegtGgvqzEnM9VKfsX+gO3Q=
+github.com/alibabacloud-go/dingtalk v1.7.42 h1:DOC8NZd165RGdl5QN0+wx9+ODc4mftVJy3Qye8xfglI=
+github.com/alibabacloud-go/dingtalk v1.7.42/go.mod h1:uP5klG3rdfmG3sjk9c7WpegtGgvqzEnM9VKfsX+gO3Q=
 github.com/alibabacloud-go/endpoint-util v1.1.0 h1:r/4D3VSw888XGaeNpP994zDUaxdgTSHBbVfZlzf6b5Q=
 github.com/alibabacloud-go/endpoint-util v1.1.0/go.mod h1:O5FuCALmCKs2Ff7JFJMudHs0I5EBgecXXxZRyswlEjE=
 github.com/alibabacloud-go/gateway-dingtalk v1.0.2 h1:+etjmc64QTmYvHlc6eFkH9y2DOc3UPcyD2nF3IXsVqw=
