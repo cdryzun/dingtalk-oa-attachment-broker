@@ -156,7 +156,10 @@ func attachmentFromMap(value map[string]any) (Attachment, bool) {
 	if !ok || strings.TrimSpace(fileID) == "" {
 		return Attachment{}, false
 	}
-	fileName, _ := firstString(value, "fileName", "name")
+	fileName, ok := firstString(value, "fileName", "name")
+	if !ok || strings.TrimSpace(fileName) == "" {
+		return Attachment{}, false
+	}
 	fileType, _ := firstString(value, "fileType", "extension")
 	spaceID, _ := stringValue(value["spaceId"])
 	fileSize := firstInt64(value, "fileSize", "size")

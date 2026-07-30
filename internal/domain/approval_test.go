@@ -140,6 +140,7 @@ func TestParseAttachmentsRejectsMalformedAndIncompleteValues(t *testing.T) {
 		{Value: `{"fileName":"missing-id.pdf"}`},
 		{Value: `{"fileId":42,"fileName":"wrong-type.pdf"}`},
 		{Value: `{"fileId":"valid","fileName":"valid.pdf","fileSize":"invalid"}`},
+		{Value: `{"fileId":"business-record","status":"active"}`},
 	}
 
 	got := ParseAttachments(formValues, nil)
