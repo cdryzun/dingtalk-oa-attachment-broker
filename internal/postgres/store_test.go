@@ -158,8 +158,8 @@ func TestStorePersistsDeviceAuthorizationAndRotatingSessions(t *testing.T) {
 	if string(claimedDeviceHash) != string(deviceHash) {
 		t.Errorf("claimed device hash = %q; want %q", claimedDeviceHash, deviceHash)
 	}
-	if _, err := store.ClaimOAuthState(ctx, stateHash, now); !errors.Is(err, domain.ErrUnauthorized) {
-		t.Errorf("replayed ClaimOAuthState() error = %v; want unauthorized", err)
+	if _, err := store.ClaimOAuthState(ctx, stateHash, now); !errors.Is(err, domain.ErrAlreadyUsed) {
+		t.Errorf("replayed ClaimOAuthState() error = %v; want already used", err)
 	}
 	_, err = store.ExchangeDeviceAuthorization(ctx, deviceHash, testSessionSeed(now, "authorizing"), now)
 	if !errors.Is(err, domain.ErrAuthorizationPending) {
@@ -168,6 +168,9 @@ func TestStorePersistsDeviceAuthorizationAndRotatingSessions(t *testing.T) {
 
 	if err := store.CompleteDeviceAuthorization(ctx, claimedDeviceHash, user, now); err != nil {
 		t.Fatalf("CompleteDeviceAuthorization() error = %v", err)
+	}
+	if _, err := store.ClaimOAuthState(ctx, stateHash, now); !errors.Is(err, domain.ErrUnauthorized) {
+		t.Errorf("completed ClaimOAuthState() error = %v; want unauthorized", err)
 	}
 	sessionUser, err := store.ExchangeDeviceAuthorization(
 		ctx,
@@ -576,6 +579,43 @@ func TestGetSessionDatabaseFailureIsUnavailable(t *testing.T) {
 		if err := operation(); !errors.Is(err, domain.ErrUnavailable) || !errors.Is(err, context.Canceled) {
 			t.Errorf("%s error = %v; want unavailable and canceled", name, err)
 		}
+	}
+}
+
+func TestConfirmOAuthStateClaim(t *testing.T) {
+	parentContext, cancelParent := context.WithCancel(context.Background())
+	cancelParent()
+	now := time.Now()
+	deviceCodeHash, err := confirmOAuthStateClaim(
+		parentContext,
+		[]byte("state-hash"),
+		now,
+		errors.New("commit acknowledgement lost"),
+		func(ctx context.Context, stateHash []byte, lookupNow time.Time) ([]byte, error) {
+			if ctx.Err() != nil {
+				t.Fatalf("confirmation context error = %v; want detached context", ctx.Err())
+			}
+			if string(stateHash) != "state-hash" || !lookupNow.Equal(now) {
+				t.Fatalf("claim confirmation lookup = %q, %v", stateHash, lookupNow)
+			}
+			return []byte("device-hash"), nil
+		},
+	)
+	if err != nil || string(deviceCodeHash) != "device-hash" {
+		t.Fatalf("confirmOAuthStateClaim() = %q, %v; want device hash", deviceCodeHash, err)
+	}
+
+	_, err = confirmOAuthStateClaim(
+		context.Background(),
+		[]byte("missing-state"),
+		now,
+		errors.New("commit failed"),
+		func(context.Context, []byte, time.Time) ([]byte, error) {
+			return nil, domain.ErrUnauthorized
+		},
+	)
+	if !errors.Is(err, domain.ErrUnavailable) || errors.Is(err, domain.ErrUnauthorized) {
+		t.Fatalf("unconfirmed claim error = %v; want only unavailable", err)
 	}
 }
 

@@ -217,14 +217,20 @@ func (store *Store) ClaimOAuthState(
 	if _, err := transaction.Exec(
 		ctx,
 		`UPDATE device_authorizations
-		 SET status = 'authorizing', oauth_state_hash = NULL
+		 SET status = 'authorizing'
 		 WHERE device_code_hash = $1`,
 		deviceCodeHash,
 	); err != nil {
 		return nil, fmt.Errorf("%w: claim OAuth state: %w", domain.ErrUnavailable, err)
 	}
 	if err := transaction.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("%w: commit OAuth state claim transaction: %w", domain.ErrUnavailable, err)
+		return confirmOAuthStateClaim(
+			ctx,
+			stateHash,
+			now,
+			err,
+			store.getClaimedOAuthState,
+		)
 	}
 	return append([]byte(nil), deviceCodeHash...), nil
 }
@@ -272,7 +278,7 @@ func (store *Store) RejectDeviceAuthorization(
 	if _, err := transaction.Exec(
 		ctx,
 		`UPDATE device_authorizations
-		 SET status = 'denied'
+		 SET status = 'denied', oauth_state_hash = NULL
 		 WHERE device_code_hash = $1`,
 		deviceCodeHash,
 	); err != nil {
@@ -347,7 +353,8 @@ func (store *Store) CompleteDeviceAuthorization(
 		 SET status = 'approved',
 		     corp_id = $1,
 		     user_id = $2,
-		     authorized_at = $3
+		     authorized_at = $3,
+		     oauth_state_hash = NULL
 		 WHERE device_code_hash = $4`,
 		user.CorpID,
 		user.UserID,
@@ -360,6 +367,52 @@ func (store *Store) CompleteDeviceAuthorization(
 		return fmt.Errorf("%w: commit authorization completion transaction: %w", domain.ErrUnavailable, err)
 	}
 	return nil
+}
+
+func (store *Store) getClaimedOAuthState(
+	ctx context.Context,
+	stateHash []byte,
+	now time.Time,
+) ([]byte, error) {
+	var deviceCodeHash []byte
+	err := store.pool.QueryRow(
+		ctx,
+		`SELECT device_code_hash
+		 FROM device_authorizations
+		 WHERE oauth_state_hash = $1
+		   AND status = 'authorizing'
+		   AND expires_at > $2`,
+		stateHash,
+		now,
+	).Scan(&deviceCodeHash)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, domain.ErrUnauthorized
+	}
+	if err != nil {
+		return nil, fmt.Errorf("%w: confirm OAuth state claim: %w", domain.ErrUnavailable, err)
+	}
+	return append([]byte(nil), deviceCodeHash...), nil
+}
+
+func confirmOAuthStateClaim(
+	ctx context.Context,
+	stateHash []byte,
+	now time.Time,
+	commitErr error,
+	lookup func(context.Context, []byte, time.Time) ([]byte, error),
+) ([]byte, error) {
+	confirmationContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), rollbackTimeout)
+	defer cancel()
+	deviceCodeHash, err := lookup(confirmationContext, stateHash, now)
+	if err == nil {
+		return deviceCodeHash, nil
+	}
+	return nil, fmt.Errorf(
+		"%w: commit OAuth state claim transaction: %v; confirmation failed: %v",
+		domain.ErrUnavailable,
+		commitErr,
+		err,
+	)
 }
 
 func (store *Store) ExchangeDeviceAuthorization(
