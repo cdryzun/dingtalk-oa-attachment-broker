@@ -59,13 +59,17 @@ days in the past.
 
 ## Quick Start
 
-1. Create a DingTalk enterprise internal application and grant the read-only
-   permissions listed in [DingTalk application setup](docs/dingtalk-application.md).
-2. Register `https://broker.example.com/auth/dingtalk/callback`, replacing the
-   example origin with the deployment's `PUBLIC_BASE_URL`.
-3. Create a dedicated PostgreSQL database and generate a token pepper.
-4. Apply migrations, then start the Broker.
-5. Configure the Agent or CLI with that same Broker origin.
+1. Sign in to the
+   [DingTalk Developer Console](https://open-dev.dingtalk.com/) and create an
+   enterprise internal application.
+2. Grant the exact permissions listed in
+   [DingTalk application setup](docs/dingtalk-application.md).
+3. Deploy the Broker at a public HTTPS origin, register
+   `https://broker.example.com/auth/dingtalk/callback`, and publish the DingTalk
+   application version. Replace the example origin with `PUBLIC_BASE_URL`.
+4. Create a dedicated PostgreSQL database and generate a token pepper.
+5. Apply migrations, then start the Broker.
+6. Configure the Agent or CLI with that same Broker origin.
 
 For local source development:
 

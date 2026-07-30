@@ -32,9 +32,9 @@ directly to the Broker.
 - A dedicated PostgreSQL database and role on a supported major version.
 - A DNS name and trusted TLS certificate.
 - A DingTalk enterprise internal application owned by the deploying enterprise.
-- The exact callback `${PUBLIC_BASE_URL}/auth/dingtalk/callback` registered in
-  DingTalk.
-- The read-only DingTalk capabilities in
+- The exact callback `${PUBLIC_BASE_URL}/auth/dingtalk/callback` registered and
+  published in the DingTalk application version.
+- The required DingTalk permissions in
   [DingTalk application setup](dingtalk-application.md).
 - A secret store for the application credentials, database URL, and token
   pepper.
