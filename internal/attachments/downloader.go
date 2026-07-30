@@ -112,7 +112,7 @@ func (downloader *Downloader) Open(
 		}
 		return nil, fmt.Errorf("%w: download request failed", domain.ErrUpstream)
 	}
-	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+	if response.StatusCode != http.StatusOK {
 		_ = response.Body.Close()
 		switch response.StatusCode {
 		case http.StatusNotFound:

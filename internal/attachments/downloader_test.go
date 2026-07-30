@@ -87,6 +87,29 @@ func TestSecureDownloaderPreservesEncodedAttachmentBytes(t *testing.T) {
 	}
 }
 
+func TestDownloaderRejectsPartialContent(t *testing.T) {
+	body := &trackingReadCloser{Reader: strings.NewReader("partial")}
+	downloader := newDownloaderForTest(
+		&http.Client{Transport: roundTripperFunc(func(request *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode:    http.StatusPartialContent,
+				Header:        make(http.Header),
+				Body:          body,
+				ContentLength: 7,
+				Request:       request,
+			}, nil
+		})},
+		1024,
+	)
+	_, err := downloader.Open(
+		context.Background(),
+		mustURL(t, "https://download.example.test/file"),
+	)
+	if !errors.Is(err, domain.ErrUpstream) || !body.closed {
+		t.Fatalf("partial download error = %v, body closed = %v", err, body.closed)
+	}
+}
+
 func TestSecureDialerRejectsPrivateDNSAnswers(t *testing.T) {
 	dialer := secureDialer{
 		resolver: staticResolver{addresses: []net.IPAddr{{IP: net.ParseIP("127.0.0.1")}}},
