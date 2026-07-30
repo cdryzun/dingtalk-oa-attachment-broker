@@ -679,6 +679,46 @@ def test_login_reports_browser_open_failure_without_aborting(
     assert records[1]["event"] == "login_completed"
 
 
+def test_login_poll_uses_remaining_login_deadline() -> None:
+    observed_timeouts: list[float] = []
+
+    class StalledLoginClient:
+        broker_url = "https://broker.example.test"
+        store = MemoryStore()
+        timeout = 300.0
+
+        @staticmethod
+        def create_device_authorization() -> dict[str, Any]:
+            return {
+                "deviceCode": "device-code",
+                "userCode": "ABCD-EFGH",
+                "verificationUriComplete": (
+                    "https://broker.example.test/auth/dingtalk/start"
+                    "?user_code=ABCD-EFGH"
+                ),
+                "expiresIn": 600,
+                "interval": 5,
+            }
+
+        @staticmethod
+        def exchange_device_code(
+            _device_code: str,
+            *,
+            timeout: float,
+        ) -> dict[str, Any]:
+            observed_timeouts.append(timeout)
+            raise CLIENT.ClientError("upstream_error", "stalled", status=503)
+
+    with pytest.raises(CLIENT.ClientError):
+        CLIENT.command_login(
+            StalledLoginClient(),
+            open_browser=False,
+            timeout_seconds=10,
+        )
+
+    assert 0 < observed_timeouts[0] <= 10
+
+
 def test_auth_status_validates_identity_without_disclosing_tokens(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

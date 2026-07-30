@@ -301,17 +301,23 @@ class BrokerClient:
     ) -> None:
         self.broker_url = validate_broker_url(broker_url)
         self.store = store
-        self.timeout = timeout
+        self.timeout = _validate_request_timeout(timeout)
         self.opener = opener or urllib.request.build_opener(NoRedirectHandler())
 
     def create_device_authorization(self) -> Dict[str, Any]:
         return self._json_request("POST", "/api/v1/device-authorizations")
 
-    def exchange_device_code(self, device_code: str) -> Dict[str, Any]:
+    def exchange_device_code(
+        self,
+        device_code: str,
+        *,
+        timeout: Optional[float] = None,
+    ) -> Dict[str, Any]:
         return self._json_request(
             "POST",
             "/api/v1/device-authorizations/token",
             body={"deviceCode": device_code},
+            timeout=timeout,
         )
 
     def refresh_session(self, refresh_token: str) -> Dict[str, Any]:
@@ -474,8 +480,9 @@ class BrokerClient:
         path: str,
         *,
         body: Optional[Dict[str, Any]] = None,
+        timeout: Optional[float] = None,
     ) -> Dict[str, Any]:
-        response = self._open(method, path, body=body)
+        response = self._open(method, path, body=body, timeout=timeout)
         with response:
             return _decode_json_response(response)
 
@@ -486,6 +493,7 @@ class BrokerClient:
         *,
         body: Optional[Dict[str, Any]] = None,
         bearer: Optional[str] = None,
+        timeout: Optional[float] = None,
     ) -> Any:
         if not path.startswith("/"):
             raise ClientError("invalid_path", "Broker path must be absolute.")
@@ -511,7 +519,10 @@ class BrokerClient:
             method=method,
         )
         try:
-            return self.opener.open(request, timeout=self.timeout)
+            return self.opener.open(
+                request,
+                timeout=self.timeout if timeout is None else min(self.timeout, timeout),
+            )
         except urllib.error.HTTPError as error:
             raise _http_client_error(error) from None
         except (urllib.error.URLError, TimeoutError, OSError) as error:
@@ -638,9 +649,15 @@ def command_login(
     )
 
     deadline = time.monotonic() + min(expires_in, timeout_seconds)
-    while time.monotonic() < deadline:
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
         try:
-            session = client.exchange_device_code(str(authorization["deviceCode"]))
+            session = client.exchange_device_code(
+                str(authorization["deviceCode"]),
+                timeout=min(client.timeout, remaining),
+            )
         except ClientError as error:
             if error.status == 428:
                 time.sleep(min(interval, max(0.0, deadline - time.monotonic())))
@@ -1284,6 +1301,13 @@ def _validate_cursor(value: str) -> str:
         )
     return normalized
 
+def _validate_request_timeout(value: float) -> float:
+    if isinstance(value, bool) or not 1 <= value <= 600:
+        raise ClientError(
+            "invalid_request_timeout",
+            "Request timeout must be between 1 and 600 seconds.",
+        )
+    return float(value)
 
 def _positive_int(value: Any, label: str) -> int:
     if isinstance(value, bool):
@@ -1445,11 +1469,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 "invalid_timeout",
                 "Login timeout must be between 1 and 600 seconds.",
             )
-        if not 1 <= arguments.request_timeout <= 600:
-            raise ClientError(
-                "invalid_request_timeout",
-                "Request timeout must be between 1 and 600 seconds.",
-            )
+        request_timeout = _validate_request_timeout(arguments.request_timeout)
         broker_url = validate_broker_url(arguments.broker_url)
         if arguments.credential_file is None:
             store = select_credential_store(broker_url)
@@ -1461,7 +1481,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         client = BrokerClient(
             broker_url,
             store,
-            timeout=arguments.request_timeout,
+            timeout=request_timeout,
         )
 
         if arguments.command == "login":
