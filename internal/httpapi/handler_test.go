@@ -348,6 +348,19 @@ func TestDeviceAuthorizationAndOAuthRoutes(t *testing.T) {
 	if cookies[0].Name != secureAuthorizationConfirmationCookie || !cookies[0].Secure || cookies[0].Path != "/" {
 		t.Fatalf("secure confirmation cookie = %#v; want __Host-, Secure, Path=/", cookies[0])
 	}
+	retryPageRequest := httptest.NewRequest(
+		http.MethodGet,
+		"/auth/dingtalk/start?user_code=ABCD-EFGH",
+		nil,
+	)
+	retryPageRequest.AddCookie(cookies[0])
+	retryPageResponse := httptest.NewRecorder()
+	handler.ServeHTTP(retryPageResponse, retryPageRequest)
+	retryCookies := retryPageResponse.Result().Cookies()
+	if len(retryCookies) != 1 || retryCookies[0].Value != cookies[0].Value ||
+		!strings.Contains(retryPageResponse.Body.String(), cookies[0].Value) {
+		t.Fatalf("retried confirmation page did not reuse cookie: cookies=%v", retryCookies)
+	}
 
 	crossSiteRequest := httptest.NewRequest(
 		http.MethodPost,
@@ -382,6 +395,9 @@ func TestDeviceAuthorizationAndOAuthRoutes(t *testing.T) {
 			startResponse.Header().Get("Location"),
 			fakeAuth.startCalls,
 		)
+	}
+	if fakeAuth.startConfirmation != cookies[0].Value {
+		t.Errorf("authorization confirmation = %q; want cookie value", fakeAuth.startConfirmation)
 	}
 
 	callbackRequest := httptest.NewRequest(
@@ -1232,6 +1248,7 @@ type fakeAuthService struct {
 	startURL          string
 	startError        error
 	startCalls        int
+	startConfirmation string
 	completeError     error
 	rejectState       string
 	rejectError       error
@@ -1249,8 +1266,13 @@ func (fake *fakeAuthService) CreateDeviceAuthorization(
 	return fake.deviceResponse, fake.deviceError
 }
 
-func (fake *fakeAuthService) StartAuthorization(context.Context, string) (string, error) {
+func (fake *fakeAuthService) StartAuthorization(
+	_ context.Context,
+	_ string,
+	confirmation string,
+) (string, error) {
 	fake.startCalls++
+	fake.startConfirmation = confirmation
 	return fake.startURL, fake.startError
 }
 

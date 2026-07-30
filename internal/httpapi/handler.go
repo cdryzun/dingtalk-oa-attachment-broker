@@ -45,7 +45,7 @@ const (
 
 type AuthService interface {
 	CreateDeviceAuthorization(context.Context) (auth.DeviceAuthorizationResponse, error)
-	StartAuthorization(context.Context, string) (string, error)
+	StartAuthorization(context.Context, string, string) (string, error)
 	RejectAuthorization(context.Context, string) error
 	CompleteAuthorization(context.Context, string, string) error
 	ExchangeDeviceAuthorization(context.Context, string) (auth.SessionResponse, error)
@@ -543,10 +543,18 @@ func (handler *Handler) handleAuthorizationStartPage(
 		)
 		return
 	}
-	confirmation, err := newAuthorizationConfirmation()
-	if err != nil {
-		writeProblem(response, request, domain.ErrUnavailable)
-		return
+	cookieName := handler.newAuthorizationConfirmationCookie("", 0).Name
+	confirmation := ""
+	if cookie, cookieErr := request.Cookie(cookieName); cookieErr == nil && validAuthorizationConfirmation(cookie.Value) {
+		confirmation = cookie.Value
+	}
+	if confirmation == "" {
+		var err error
+		confirmation, err = newAuthorizationConfirmation()
+		if err != nil {
+			writeProblem(response, request, domain.ErrUnavailable)
+			return
+		}
 	}
 	http.SetCookie(
 		response,
@@ -583,6 +591,14 @@ func newAuthorizationConfirmation() (string, error) {
 	return hex.EncodeToString(random[:]), nil
 }
 
+func validAuthorizationConfirmation(value string) bool {
+	if len(value) != 64 {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil
+}
+
 func (handler *Handler) newAuthorizationConfirmationCookie(value string, maxAge int) *http.Cookie {
 	name := authorizationConfirmationCookie
 	path := "/auth/dingtalk/start"
@@ -616,7 +632,8 @@ func (handler *Handler) handleAuthorizationStart(
 	}
 	cookie, cookieErr := request.Cookie(handler.newAuthorizationConfirmationCookie("", 0).Name)
 	confirmation := request.PostForm.Get("confirmation")
-	if cookieErr != nil || len(confirmation) != 64 || len(cookie.Value) != 64 || subtle.ConstantTimeCompare(
+	if cookieErr != nil || !validAuthorizationConfirmation(confirmation) ||
+		!validAuthorizationConfirmation(cookie.Value) || subtle.ConstantTimeCompare(
 		[]byte(confirmation),
 		[]byte(cookie.Value),
 	) != 1 {
@@ -626,6 +643,7 @@ func (handler *Handler) handleAuthorizationStart(
 	authorizationURL, err := handler.auth.StartAuthorization(
 		request.Context(),
 		request.URL.Query().Get("user_code"),
+		confirmation,
 	)
 	if err != nil {
 		writeProblem(response, request, err)

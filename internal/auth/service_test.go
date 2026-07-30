@@ -71,14 +71,21 @@ func TestServiceRetriesGeneratedDeviceAuthorizationCollisions(t *testing.T) {
 	}
 }
 
-func TestServiceStartsDingTalkAuthorizationWithSingleUseState(t *testing.T) {
+func TestServiceStartsDingTalkAuthorizationWithRecoverableState(t *testing.T) {
 	repository := &recordingRepository{}
 	service := newTestService(repository, &identityProviderStub{})
-	service.generator = &tokenGeneratorStub{tokens: []string{"raw-oauth-state"}}
+	confirmation := strings.Repeat("a", 64)
 
-	got, err := service.StartAuthorization(context.Background(), "ABCD-EFGH")
+	got, err := service.StartAuthorization(context.Background(), "ABCD-EFGH", confirmation)
 	if err != nil {
 		t.Fatalf("StartAuthorization() error = %v", err)
+	}
+	retried, err := service.StartAuthorization(context.Background(), "ABCD-EFGH", confirmation)
+	if err != nil {
+		t.Fatalf("retried StartAuthorization() error = %v", err)
+	}
+	if retried != got || repository.bindCalls != 2 {
+		t.Fatalf("retried authorization = %q, binds = %d; want identical redirect and 2 binds", retried, repository.bindCalls)
 	}
 
 	parsed, err := url.Parse(got)
@@ -94,12 +101,13 @@ func TestServiceStartsDingTalkAuthorizationWithSingleUseState(t *testing.T) {
 	assertString(t, query.Get("response_type"), "code")
 	assertString(t, query.Get("scope"), "openid corpid")
 	assertString(t, query.Get("prompt"), "consent")
-	assertString(t, query.Get("state"), "raw-oauth-state")
-
+	if query.Get("state") == "" || query.Get("state") == "ABCD-EFGH" {
+		t.Errorf("OAuth state = %q; want opaque deterministic state", query.Get("state"))
+	}
 	if repository.boundUserCode != "ABCD-EFGH" {
 		t.Errorf("bound user code = %q; want ABCD-EFGH", repository.boundUserCode)
 	}
-	if string(repository.boundStateHash) == "raw-oauth-state" {
+	if string(repository.boundStateHash) == query.Get("state") {
 		t.Error("repository received the raw OAuth state")
 	}
 }
@@ -398,22 +406,14 @@ func TestCreateAndStartAuthorizationErrorPaths(t *testing.T) {
 	})
 	t.Run("missing user code", func(t *testing.T) {
 		service := newTestService(&recordingRepository{}, &identityProviderStub{})
-		if _, err := service.StartAuthorization(context.Background(), " "); !errors.Is(err, domain.ErrInvalidInput) {
+		if _, err := service.StartAuthorization(context.Background(), " ", strings.Repeat("a", 64)); !errors.Is(err, domain.ErrInvalidInput) {
 			t.Fatalf("StartAuthorization() error = %v", err)
 		}
 	})
-	t.Run("state generation", func(t *testing.T) {
+	t.Run("invalid confirmation", func(t *testing.T) {
 		service := newTestService(&recordingRepository{}, &identityProviderStub{})
-		service.generator = &tokenGeneratorStub{}
-		if _, err := service.StartAuthorization(context.Background(), "ABCD-EFGH"); err == nil {
-			t.Fatal("StartAuthorization() error = nil")
-		}
-	})
-	t.Run("empty generated state", func(t *testing.T) {
-		service := newTestService(&recordingRepository{}, &identityProviderStub{})
-		service.generator = &tokenGeneratorStub{tokens: []string{""}}
-		if _, err := service.StartAuthorization(context.Background(), "ABCD-EFGH"); err == nil {
-			t.Fatal("StartAuthorization() error = nil")
+		if _, err := service.StartAuthorization(context.Background(), "ABCD-EFGH", "invalid"); !errors.Is(err, domain.ErrInvalidInput) {
+			t.Fatalf("StartAuthorization() error = %v", err)
 		}
 	})
 	t.Run("repository bind", func(t *testing.T) {
@@ -422,7 +422,7 @@ func TestCreateAndStartAuthorizationErrorPaths(t *testing.T) {
 			&identityProviderStub{},
 		)
 		service.generator = &tokenGeneratorStub{tokens: []string{"state"}}
-		if _, err := service.StartAuthorization(context.Background(), "ABCD-EFGH"); err == nil {
+		if _, err := service.StartAuthorization(context.Background(), "ABCD-EFGH", strings.Repeat("a", 64)); err == nil {
 			t.Fatal("StartAuthorization() error = nil")
 		}
 	})
@@ -718,6 +718,7 @@ type recordingRepository struct {
 	boundUserCode          string
 	boundStateHash         []byte
 	bindErr                error
+	bindCalls              int
 	claimStateHash         []byte
 	claimedDeviceHash      []byte
 	claimCalls             int
@@ -769,6 +770,7 @@ func (repository *recordingRepository) BindOAuthState(
 	stateHash []byte,
 	_ time.Time,
 ) error {
+	repository.bindCalls++
 	repository.boundUserCode = userCode
 	repository.boundStateHash = append([]byte(nil), stateHash...)
 	return repository.bindErr

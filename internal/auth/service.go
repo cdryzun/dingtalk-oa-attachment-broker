@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -224,15 +225,20 @@ func (service *Service) CreateDeviceAuthorization(
 	}, nil
 }
 
-func (service *Service) StartAuthorization(ctx context.Context, userCode string) (string, error) {
+func (service *Service) StartAuthorization(ctx context.Context, userCode, confirmation string) (string, error) {
 	userCode = strings.TrimSpace(userCode)
 	if userCode == "" {
 		return "", fmt.Errorf("%w: user code is required", domain.ErrInvalidInput)
 	}
-	state, err := service.generator.Token()
-	if err != nil {
-		return "", fmt.Errorf("generate OAuth state: %w", err)
+	confirmation = strings.TrimSpace(confirmation)
+	if decoded, err := hex.DecodeString(confirmation); err != nil || len(decoded) != 32 {
+		return "", fmt.Errorf("%w: authorization confirmation is invalid", domain.ErrInvalidInput)
 	}
+	stateSeed, err := service.hasher.Hash("oauth-state\x00" + userCode + "\x00" + confirmation)
+	if err != nil {
+		return "", fmt.Errorf("derive OAuth state: %w", err)
+	}
+	state := base64.RawURLEncoding.EncodeToString(stateSeed)
 	stateHash, err := service.hasher.Hash(state)
 	if err != nil {
 		return "", fmt.Errorf("hash OAuth state: %w", err)

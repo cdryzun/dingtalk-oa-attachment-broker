@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"time"
@@ -131,8 +132,14 @@ func (store *Store) BindOAuthState(
 	if !expiresAt.After(now) {
 		return domain.ErrExpired
 	}
-	if status != "pending" || len(existingStateHash) != 0 {
+	if status != "pending" {
 		return domain.ErrAlreadyUsed
+	}
+	if len(existingStateHash) != 0 {
+		if subtle.ConstantTimeCompare(existingStateHash, stateHash) != 1 {
+			return domain.ErrAlreadyUsed
+		}
+		return nil
 	}
 	if _, err := transaction.Exec(
 		ctx,
@@ -421,8 +428,9 @@ func (store *Store) ExchangeDeviceAuthorization(
 		return domain.User{}, fmt.Errorf("%w: consume device authorization: %w", domain.ErrUnavailable, err)
 	}
 	if err := transaction.Commit(ctx); err != nil {
-		return confirmDeviceExchangeCommit(
+		return confirmSessionCommit(
 			ctx,
+			"device exchange",
 			session.AccessTokenHash,
 			now,
 			err,
@@ -432,8 +440,9 @@ func (store *Store) ExchangeDeviceAuthorization(
 	return user, nil
 }
 
-func confirmDeviceExchangeCommit(
+func confirmSessionCommit(
 	ctx context.Context,
+	operation string,
 	accessTokenHash []byte,
 	now time.Time,
 	commitErr error,
@@ -446,8 +455,9 @@ func confirmDeviceExchangeCommit(
 		return user, nil
 	}
 	return domain.User{}, fmt.Errorf(
-		"%w: commit device exchange transaction: %v; confirmation failed: %v",
+		"%w: commit %s transaction: %v; confirmation failed: %v",
 		domain.ErrUnavailable,
+		operation,
 		commitErr,
 		err,
 	)
@@ -536,7 +546,14 @@ func (store *Store) RotateSession(
 		return domain.User{}, err
 	}
 	if err := transaction.Commit(ctx); err != nil {
-		return domain.User{}, fmt.Errorf("%w: commit session rotation transaction: %w", domain.ErrUnavailable, err)
+		return confirmSessionCommit(
+			ctx,
+			"session rotation",
+			replacement.AccessTokenHash,
+			now,
+			err,
+			store.GetSessionByAccessToken,
+		)
 	}
 	return user, nil
 }

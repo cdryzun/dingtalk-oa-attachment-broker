@@ -139,6 +139,12 @@ func TestStorePersistsDeviceAuthorizationAndRotatingSessions(t *testing.T) {
 	if err := store.BindOAuthState(ctx, "ABCD-EFGH", stateHash, now); err != nil {
 		t.Fatalf("BindOAuthState() error = %v", err)
 	}
+	if err := store.BindOAuthState(ctx, "ABCD-EFGH", stateHash, now); err != nil {
+		t.Fatalf("idempotent BindOAuthState() error = %v", err)
+	}
+	if err := store.BindOAuthState(ctx, "ABCD-EFGH", []byte("different-state"), now); !errors.Is(err, domain.ErrAlreadyUsed) {
+		t.Fatalf("different BindOAuthState() error = %v; want already used", err)
+	}
 
 	_, err = store.ExchangeDeviceAuthorization(ctx, deviceHash, testSessionSeed(now, "first"), now)
 	if !errors.Is(err, domain.ErrAuthorizationPending) {
@@ -573,13 +579,14 @@ func TestGetSessionDatabaseFailureIsUnavailable(t *testing.T) {
 	}
 }
 
-func TestConfirmDeviceExchangeCommit(t *testing.T) {
+func TestConfirmSessionCommit(t *testing.T) {
 	parentContext, cancelParent := context.WithCancel(context.Background())
 	cancelParent()
 	now := time.Now()
 	wantUser := domain.User{CorpID: "corp", UserID: "user"}
-	user, err := confirmDeviceExchangeCommit(
+	user, err := confirmSessionCommit(
 		parentContext,
+		"device exchange",
 		[]byte("access-hash"),
 		now,
 		errors.New("commit acknowledgement lost"),
@@ -599,11 +606,12 @@ func TestConfirmDeviceExchangeCommit(t *testing.T) {
 		},
 	)
 	if err != nil || user != wantUser {
-		t.Fatalf("confirmDeviceExchangeCommit() = %#v, %v; want committed user", user, err)
+		t.Fatalf("confirmSessionCommit() = %#v, %v; want committed user", user, err)
 	}
 
-	_, err = confirmDeviceExchangeCommit(
+	_, err = confirmSessionCommit(
 		context.Background(),
+		"session rotation",
 		[]byte("missing-hash"),
 		now,
 		errors.New("commit failed"),
