@@ -323,7 +323,7 @@ func (client *Client) Approval(
 			domain.ErrUpstream,
 		)
 	}
-	return mapApproval(processInstanceID, response.Body.Result), nil
+	return mapApproval(processInstanceID, response.Body.Result)
 }
 
 func (client *Client) ListVisibleApprovalTemplates(
@@ -593,7 +593,7 @@ func (client *Client) runtime() *util.RuntimeOptions {
 func mapApproval(
 	processInstanceID string,
 	result *workflow.GetProcessInstanceResponseBodyResult,
-) domain.Approval {
+) (domain.Approval, error) {
 	formValues := make([]domain.FormValue, 0, len(result.FormComponentValues))
 	for _, item := range result.FormComponentValues {
 		if item == nil {
@@ -640,14 +640,22 @@ func mapApproval(
 			taskUserIDs = appendUnique(taskUserIDs, value(task.UserId))
 		}
 	}
+	createTime, err := normalizeApprovalTimestamp("createTime", value(result.CreateTime))
+	if err != nil {
+		return domain.Approval{}, err
+	}
+	finishTime, err := normalizeApprovalTimestamp("finishTime", value(result.FinishTime))
+	if err != nil {
+		return domain.Approval{}, err
+	}
 	approval := domain.Approval{
 		ProcessInstanceID: processInstanceID,
 		BusinessID:        value(result.BusinessId),
 		Title:             value(result.Title),
 		Status:            value(result.Status),
 		Result:            value(result.Result),
-		CreateTime:        value(result.CreateTime),
-		FinishTime:        value(result.FinishTime),
+		CreateTime:        createTime,
+		FinishTime:        finishTime,
 		OriginatorUserID:  value(result.OriginatorUserId),
 		ApproverUserIDs:   stringsFromPointers(result.ApproverUserIds),
 		CCUserIDs:         ccUserIDs,
@@ -656,7 +664,19 @@ func mapApproval(
 		OperationRecords:  operationRecords,
 	}
 	approval.Attachments = domain.ParseAttachments(formValues, operationRecords)
-	return approval
+	return approval, nil
+}
+
+func normalizeApprovalTimestamp(field string, timestamp string) (string, error) {
+	timestamp = strings.TrimSpace(timestamp)
+	if timestamp == "" {
+		return "", nil
+	}
+	parsed, err := time.Parse(time.RFC3339, timestamp)
+	if err != nil {
+		return "", fmt.Errorf("%w: DingTalk approval %s is invalid", domain.ErrUpstream, field)
+	}
+	return parsed.UTC().Format(time.RFC3339Nano), nil
 }
 
 func callSDK[T any](ctx context.Context, call func() (T, error)) (T, error) {

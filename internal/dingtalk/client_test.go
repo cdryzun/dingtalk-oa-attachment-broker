@@ -270,7 +270,7 @@ func TestApprovalMapsParticipantsAndAttachments(t *testing.T) {
 					Title:            stringPointer("Approval title"),
 					Status:           stringPointer("RUNNING"),
 					Result:           stringPointer("NONE"),
-					CreateTime:       stringPointer("2026-07-18T08:00Z"),
+					CreateTime:       stringPointer("2026-07-18T08:00:00Z"),
 					OriginatorUserId: stringPointer("originator"),
 					ApproverUserIds:  stringPointers("approver"),
 					CcUserIds:        stringPointers("cc"),
@@ -314,7 +314,7 @@ func TestApprovalMapsParticipantsAndAttachments(t *testing.T) {
 	if approval.ProcessInstanceID != "instance-id" ||
 		approval.BusinessID != "business-id" ||
 		approval.Status != "RUNNING" ||
-		approval.CreateTime != "2026-07-18T08:00Z" ||
+		approval.CreateTime != "2026-07-18T08:00:00Z" ||
 		approval.OriginatorUserID != "originator" {
 		t.Errorf("approval identity = %#v", approval)
 	}
@@ -332,6 +332,16 @@ func TestApprovalMapsParticipantsAndAttachments(t *testing.T) {
 	}
 	if workflowAPI.processAccessToken != "app-token" {
 		t.Errorf("process access token = %q; want app-token", workflowAPI.processAccessToken)
+	}
+
+	workflowAPI.processResponse.Body.Result.CreateTime = stringPointer("not-a-time")
+	if _, err := client.Approval(context.Background(), "instance-id"); !errors.Is(err, domain.ErrUpstream) {
+		t.Fatalf("invalid create time error = %v; want upstream", err)
+	}
+	workflowAPI.processResponse.Body.Result.CreateTime = stringPointer("2026-07-18T08:00:00Z")
+	workflowAPI.processResponse.Body.Result.FinishTime = stringPointer("not-a-time")
+	if _, err := client.Approval(context.Background(), "instance-id"); !errors.Is(err, domain.ErrUpstream) {
+		t.Fatalf("invalid finish time error = %v; want upstream", err)
 	}
 }
 

@@ -721,7 +721,7 @@ func approvalFixture(
 		ProcessInstanceID: processInstanceID,
 		BusinessID:        "business-" + processInstanceID,
 		Title:             title,
-		CreateTime:        "2026-07-18T08:00Z",
+		CreateTime:        "2026-07-18T08:00:00Z",
 		ApproverUserIDs:   []string{participant},
 		FormValues:        formValues,
 	}
