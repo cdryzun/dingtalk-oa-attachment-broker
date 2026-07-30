@@ -107,7 +107,7 @@ func (store *Store) BindOAuthState(
 ) error {
 	transaction, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		return fmt.Errorf("begin OAuth state transaction: %w", err)
+		return fmt.Errorf("%w: begin OAuth state transaction: %w", domain.ErrUnavailable, err)
 	}
 	defer rollback(transaction)
 
@@ -126,7 +126,7 @@ func (store *Store) BindOAuthState(
 		return domain.ErrNotFound
 	}
 	if err != nil {
-		return fmt.Errorf("load device authorization by user code: %w", err)
+		return fmt.Errorf("%w: load device authorization by user code: %w", domain.ErrUnavailable, err)
 	}
 	if !expiresAt.After(now) {
 		return domain.ErrExpired
@@ -143,7 +143,7 @@ func (store *Store) BindOAuthState(
 		return classifyWriteError("bind OAuth state", err)
 	}
 	if err := transaction.Commit(ctx); err != nil {
-		return fmt.Errorf("commit OAuth state transaction: %w", err)
+		return fmt.Errorf("%w: commit OAuth state transaction: %w", domain.ErrUnavailable, err)
 	}
 	return nil
 }
@@ -229,7 +229,7 @@ func (store *Store) RejectDeviceAuthorization(
 ) error {
 	transaction, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		return fmt.Errorf("begin authorization rejection transaction: %w", err)
+		return fmt.Errorf("%w: begin authorization rejection transaction: %w", domain.ErrUnavailable, err)
 	}
 	defer rollback(transaction)
 
@@ -247,7 +247,7 @@ func (store *Store) RejectDeviceAuthorization(
 		return domain.ErrUnauthorized
 	}
 	if err != nil {
-		return fmt.Errorf("load claimed device authorization for rejection: %w", err)
+		return fmt.Errorf("%w: load claimed device authorization for rejection: %w", domain.ErrUnavailable, err)
 	}
 	if !expiresAt.After(now) {
 		return domain.ErrExpired
@@ -269,10 +269,10 @@ func (store *Store) RejectDeviceAuthorization(
 		 WHERE device_code_hash = $1`,
 		deviceCodeHash,
 	); err != nil {
-		return fmt.Errorf("reject device authorization: %w", err)
+		return fmt.Errorf("%w: reject device authorization: %w", domain.ErrUnavailable, err)
 	}
 	if err := transaction.Commit(ctx); err != nil {
-		return fmt.Errorf("commit authorization rejection transaction: %w", err)
+		return fmt.Errorf("%w: commit authorization rejection transaction: %w", domain.ErrUnavailable, err)
 	}
 	return nil
 }
@@ -285,7 +285,7 @@ func (store *Store) CompleteDeviceAuthorization(
 ) error {
 	transaction, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		return fmt.Errorf("begin authorization completion transaction: %w", err)
+		return fmt.Errorf("%w: begin authorization completion transaction: %w", domain.ErrUnavailable, err)
 	}
 	defer rollback(transaction)
 
@@ -303,7 +303,7 @@ func (store *Store) CompleteDeviceAuthorization(
 		return domain.ErrUnauthorized
 	}
 	if err != nil {
-		return fmt.Errorf("load claimed device authorization: %w", err)
+		return fmt.Errorf("%w: load claimed device authorization: %w", domain.ErrUnavailable, err)
 	}
 	if !expiresAt.After(now) {
 		return domain.ErrExpired
@@ -347,10 +347,10 @@ func (store *Store) CompleteDeviceAuthorization(
 		now,
 		deviceCodeHash,
 	); err != nil {
-		return fmt.Errorf("approve device authorization: %w", err)
+		return fmt.Errorf("%w: approve device authorization: %w", domain.ErrUnavailable, err)
 	}
 	if err := transaction.Commit(ctx); err != nil {
-		return fmt.Errorf("commit authorization completion transaction: %w", err)
+		return fmt.Errorf("%w: commit authorization completion transaction: %w", domain.ErrUnavailable, err)
 	}
 	return nil
 }
@@ -528,7 +528,7 @@ func (store *Store) RevokeSession(
 		accessTokenHash,
 	)
 	if err != nil {
-		return fmt.Errorf("revoke session: %w", err)
+		return fmt.Errorf("%w: revoke session: %w", domain.ErrUnavailable, err)
 	}
 	if tag.RowsAffected() != 1 {
 		return domain.ErrUnauthorized
@@ -557,7 +557,7 @@ func (store *Store) RecordAudit(ctx context.Context, event domain.AuditEvent) er
 		event.CreatedAt,
 	)
 	if err != nil {
-		return fmt.Errorf("record audit event: %w", err)
+		return fmt.Errorf("%w: record audit event: %w", domain.ErrUnavailable, err)
 	}
 	return nil
 }

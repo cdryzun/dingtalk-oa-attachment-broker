@@ -547,6 +547,29 @@ func TestGetSessionDatabaseFailureIsUnavailable(t *testing.T) {
 	if !errors.Is(err, domain.ErrUnavailable) || !errors.Is(err, context.Canceled) {
 		t.Fatalf("ClaimOAuthState() error = %v; want unavailable and canceled", err)
 	}
+	for name, operation := range map[string]func() error{
+		"bind OAuth state": func() error {
+			return store.BindOAuthState(ctx, "ABCD-EFGH", []byte("state"), time.Now())
+		},
+		"reject device authorization": func() error {
+			return store.RejectDeviceAuthorization(ctx, []byte("device-code"), time.Now())
+		},
+		"complete device authorization": func() error {
+			return store.CompleteDeviceAuthorization(
+				ctx,
+				[]byte("device-code"),
+				domain.User{CorpID: "corp", UserID: "user"},
+				time.Now(),
+			)
+		},
+		"revoke session": func() error {
+			return store.RevokeSession(ctx, []byte("access-token"), time.Now())
+		},
+	} {
+		if err := operation(); !errors.Is(err, domain.ErrUnavailable) || !errors.Is(err, context.Canceled) {
+			t.Errorf("%s error = %v; want unavailable and canceled", name, err)
+		}
+	}
 }
 
 type rollbackRecorder struct {
