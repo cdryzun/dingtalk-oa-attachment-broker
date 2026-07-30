@@ -147,6 +147,25 @@ func TestMetricsBoundUnrecognizedHTTPMethods(t *testing.T) {
 	}
 }
 
+func TestRateLimiterBoundsSourceStateAndAggregatesIPv6(t *testing.T) {
+	now := time.Date(2026, 7, 30, 10, 0, 0, 0, time.UTC)
+	ipv6Limiter := newRateLimiter(1, func() time.Time { return now })
+	if !ipv6Limiter.Allow("2001:db8:1:2::1") {
+		t.Fatal("first IPv6 address was rejected")
+	}
+	if ipv6Limiter.Allow("2001:db8:1:2::2") {
+		t.Fatal("second address in the same IPv6 /64 bypassed the rate limit")
+	}
+
+	boundedLimiter := newRateLimiter(1, func() time.Time { return now })
+	for index := 0; index < maxRateLimitEntries+100; index++ {
+		boundedLimiter.Allow(fmt.Sprintf("2001:db8:%x::1", index))
+	}
+	if len(boundedLimiter.entries) > maxRateLimitEntries {
+		t.Fatalf("rate-limit entries = %d; want at most %d", len(boundedLimiter.entries), maxRateLimitEntries)
+	}
+}
+
 func TestRateLimitUsesForwardedClientOnlyForTrustedProxy(t *testing.T) {
 	tests := []struct {
 		name           string

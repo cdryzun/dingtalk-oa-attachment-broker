@@ -46,6 +46,7 @@ flowchart LR
 | Secret leakage in logs | Stable error classes and path-only request logging |
 | Credential replacement | Owner checks and private parent directory |
 | Forwarded address spoofing | Trust headers only from configured proxy CIDRs |
+| Rate-limit state exhaustion | IPv6 /64 aggregation and bounded overflow |
 | Public telemetry disclosure | Private listener and restricted network path |
 | Expired credential metadata growth | Bounded expired-record retention |
 | Audit bypass | Detached bounded writes; allowed responses fail closed |

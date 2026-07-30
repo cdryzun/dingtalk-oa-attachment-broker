@@ -1,8 +1,14 @@
 package httpapi
 
 import (
+	"net/netip"
 	"sync"
 	"time"
+)
+
+const (
+	maxRateLimitEntries  = 4096
+	overflowRateLimitKey = "__overflow__"
 )
 
 type rateLimitEntry struct {
@@ -23,13 +29,17 @@ func newRateLimiter(limit int, now func() time.Time) *rateLimiter {
 	return &rateLimiter{
 		limit:   limit,
 		now:     now,
-		entries: make(map[string]rateLimitEntry),
+		entries: map[string]rateLimitEntry{overflowRateLimitKey: {}},
 	}
 }
 
 func (limiter *rateLimiter) Allow(key string) bool {
 	limiter.mu.Lock()
 	defer limiter.mu.Unlock()
+	key = normalizedRateLimitKey(key)
+	if _, exists := limiter.entries[key]; !exists && len(limiter.entries) >= maxRateLimitEntries {
+		key = overflowRateLimitKey
+	}
 
 	now := limiter.now()
 	entry := limiter.entries[key]
@@ -49,8 +59,20 @@ func (limiter *rateLimiter) Allow(key string) bool {
 
 func (limiter *rateLimiter) prune(before time.Time) {
 	for key, entry := range limiter.entries {
-		if entry.lastSeen.Before(before) {
+		if key != overflowRateLimitKey && entry.lastSeen.Before(before) {
 			delete(limiter.entries, key)
 		}
 	}
+}
+
+func normalizedRateLimitKey(key string) string {
+	address, err := netip.ParseAddr(key)
+	if err != nil {
+		return key
+	}
+	address = address.Unmap()
+	if address.Is6() {
+		return netip.PrefixFrom(address, 64).Masked().String()
+	}
+	return address.String()
 }
