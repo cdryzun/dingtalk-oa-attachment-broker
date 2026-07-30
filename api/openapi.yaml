@@ -69,6 +69,10 @@ paths:
         - Authentication
       operationId: startDingTalkAuthorization
       summary: Bind a user code and redirect to DingTalk
+      description: |
+        The preceding GET issues exactly one environment-specific confirmation
+        cookie. HTTPS uses the `__Host-` cookie; loopback HTTP uses the
+        unprefixed development cookie. The browser submits the issued cookie.
       parameters:
         - name: user_code
           in: query
@@ -76,9 +80,17 @@ paths:
           schema:
             type: string
             pattern: "^[A-Z2-9]{4}-[A-Z2-9]{4}$"
+        - name: __Host-dingtalk_oa_start_confirmation
+          in: cookie
+          required: false
+          description: Host-bound confirmation cookie used by HTTPS deployments.
+          schema:
+            type: string
+            pattern: "^[a-f0-9]{64}$"
         - name: dingtalk_oa_start_confirmation
           in: cookie
-          required: true
+          required: false
+          description: Host-only confirmation cookie used only for loopback HTTP development.
           schema:
             type: string
             pattern: "^[a-f0-9]{64}$"
