@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/alibabacloud-go/darabonba-openapi/v2 v2.0.12
-	github.com/alibabacloud-go/dingtalk v1.7.41
+	github.com/alibabacloud-go/dingtalk v1.7.42
 	github.com/alibabacloud-go/tea v1.2.2
 	github.com/alibabacloud-go/tea-utils/v2 v2.0.8
 	github.com/fergusstrange/embedded-postgres v1.34.0
