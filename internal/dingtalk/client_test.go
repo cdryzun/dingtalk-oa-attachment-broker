@@ -656,6 +656,7 @@ func TestNewClientValidatesOptionsAndBuildsOfficialSDKClients(t *testing.T) {
 			},
 		},
 		{name: "timeout", mutate: func(options *Options) { options.UpstreamTimeout = 0 }},
+		{name: "sub-millisecond timeout", mutate: func(options *Options) { options.UpstreamTimeout = 500 * time.Microsecond }},
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {

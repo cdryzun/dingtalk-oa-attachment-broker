@@ -98,8 +98,8 @@ func NewClient(options Options) (*Client, error) {
 		options.OAPIBaseURL.Hostname() == "" {
 		return nil, fmt.Errorf("%w: DingTalk OAPI HTTPS base URL is required", domain.ErrInvalidInput)
 	}
-	if options.UpstreamTimeout <= 0 {
-		return nil, fmt.Errorf("%w: upstream timeout must be positive", domain.ErrInvalidInput)
+	if options.UpstreamTimeout < time.Millisecond {
+		return nil, fmt.Errorf("%w: upstream timeout must be at least one millisecond", domain.ErrInvalidInput)
 	}
 
 	timeoutMilliseconds := int(options.UpstreamTimeout.Milliseconds())
