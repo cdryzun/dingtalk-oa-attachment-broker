@@ -446,7 +446,7 @@ func (store *Store) RotateSession(
 ) (domain.User, error) {
 	transaction, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		return domain.User{}, fmt.Errorf("begin session rotation transaction: %w", err)
+		return domain.User{}, fmt.Errorf("%w: begin session rotation transaction: %w", domain.ErrUnavailable, err)
 	}
 	defer rollback(transaction)
 
@@ -477,7 +477,7 @@ func (store *Store) RotateSession(
 		return domain.User{}, domain.ErrUnauthorized
 	}
 	if err != nil {
-		return domain.User{}, fmt.Errorf("load session by refresh token: %w", err)
+		return domain.User{}, fmt.Errorf("%w: load session by refresh token: %w", domain.ErrUnavailable, err)
 	}
 	if revokedAt != nil || !refreshExpiresAt.After(now) {
 		return domain.User{}, domain.ErrUnauthorized
@@ -488,13 +488,13 @@ func (store *Store) RotateSession(
 		now,
 		sessionID,
 	); err != nil {
-		return domain.User{}, fmt.Errorf("revoke rotated session: %w", err)
+		return domain.User{}, fmt.Errorf("%w: revoke rotated session: %w", domain.ErrUnavailable, err)
 	}
 	if err := insertSession(ctx, transaction, user, replacement, now); err != nil {
 		return domain.User{}, err
 	}
 	if err := transaction.Commit(ctx); err != nil {
-		return domain.User{}, fmt.Errorf("commit session rotation transaction: %w", err)
+		return domain.User{}, fmt.Errorf("%w: commit session rotation transaction: %w", domain.ErrUnavailable, err)
 	}
 	return user, nil
 }
@@ -575,7 +575,7 @@ func (store *Store) PruneAuthenticationState(
 	sessionTag, err := transaction.Exec(
 		ctx,
 		`DELETE FROM sessions
-		 WHERE refresh_expires_at < $1
+		 WHERE (refresh_expires_at < $1 AND access_expires_at < $1)
 		    OR (revoked_at IS NOT NULL AND revoked_at < $1)`,
 		before,
 	)

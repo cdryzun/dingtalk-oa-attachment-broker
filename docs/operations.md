@@ -76,10 +76,11 @@ The application deletes audit events older than the configured retention once
 per day. The default is 180 days. Database backups and legal retention are
 separate platform responsibilities.
 
-Expired device authorizations and sessions whose refresh lifetime ended or
-whose revocation is older than the configured authentication retention are
-also deleted once per day. The default authentication record retention is
-seven days. Active and refreshable sessions are never removed by this job.
+Expired device authorizations, non-revoked sessions whose access and refresh
+lifetimes both ended before the configured authentication retention cutoff, and
+revocations older than that cutoff are deleted once per day. The default
+authentication record retention is seven days. Active and refreshable sessions
+are never removed by this job.
 Audit pruning and authentication-state pruning each receive an independent
 30-second deadline so a slow audit backlog cannot starve session cleanup.
 

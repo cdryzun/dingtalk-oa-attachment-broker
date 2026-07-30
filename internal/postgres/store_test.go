@@ -397,11 +397,11 @@ func TestStorePrunesOnlyExpiredAuthenticationStateOutsideRetention(t *testing.T)
 			corp_id, user_id, access_token_hash, refresh_token_hash,
 			access_expires_at, refresh_expires_at, revoked_at, created_at
 		) VALUES
-			('corp-id', 'user-id', $1, $2, $9, $5, NULL, $8),
+			('corp-id', 'user-id', $1, $2, $10, $5, NULL, $8),
 			('corp-id', 'user-id', $3, $4, $9, $10, $5, $8),
 			('corp-id', 'user-id', $6, $7, $9, $10, $9, $8),
 			('corp-id', 'user-id', $11, $12, $10, $10, NULL, $9)`,
-		[]byte("expired-access"),
+		[]byte("long-access"),
 		[]byte("expired-refresh"),
 		[]byte("revoked-access"),
 		[]byte("revoked-refresh"),
@@ -424,8 +424,8 @@ func TestStorePrunesOnlyExpiredAuthenticationStateOutsideRetention(t *testing.T)
 	if deleted.DeviceAuthorizations != 1 {
 		t.Errorf("deleted device authorizations = %d; want 1", deleted.DeviceAuthorizations)
 	}
-	if deleted.Sessions != 2 {
-		t.Errorf("deleted sessions = %d; want 2", deleted.Sessions)
+	if deleted.Sessions != 1 {
+		t.Errorf("deleted sessions = %d; want 1", deleted.Sessions)
 	}
 
 	var remainingAuthorizations int
@@ -442,8 +442,11 @@ func TestStorePrunesOnlyExpiredAuthenticationStateOutsideRetention(t *testing.T)
 	if err := store.pool.QueryRow(ctx, `SELECT count(*) FROM sessions`).Scan(&remainingSessions); err != nil {
 		t.Fatalf("count sessions: %v", err)
 	}
-	if remainingSessions != 2 {
-		t.Errorf("remaining sessions = %d; want 2", remainingSessions)
+	if remainingSessions != 3 {
+		t.Errorf("remaining sessions = %d; want 3", remainingSessions)
+	}
+	if _, err := store.GetSessionByAccessToken(ctx, []byte("long-access"), now); err != nil {
+		t.Errorf("still-valid access token error = %v", err)
 	}
 }
 
@@ -498,6 +501,15 @@ func TestGetSessionDatabaseFailureIsUnavailable(t *testing.T) {
 	_, err := store.GetSessionByAccessToken(ctx, []byte("access-token"), time.Now())
 	if !errors.Is(err, domain.ErrUnavailable) || !errors.Is(err, context.Canceled) {
 		t.Fatalf("GetSessionByAccessToken() error = %v; want unavailable and canceled", err)
+	}
+	_, err = store.RotateSession(
+		ctx,
+		[]byte("refresh-token"),
+		testSessionSeed(time.Now(), "replacement"),
+		time.Now(),
+	)
+	if !errors.Is(err, domain.ErrUnavailable) || !errors.Is(err, context.Canceled) {
+		t.Fatalf("RotateSession() error = %v; want unavailable and canceled", err)
 	}
 }
 
