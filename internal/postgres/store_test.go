@@ -450,6 +450,29 @@ func TestStorePrunesOnlyExpiredAuthenticationStateOutsideRetention(t *testing.T)
 	}
 }
 
+func TestStoreReadinessRequiresAllEmbeddedMigrations(t *testing.T) {
+	store := openTestStore(t)
+	if _, err := store.pool.Exec(
+		context.Background(),
+		`DELETE FROM schema_migrations WHERE version = '002_auth_state_retention_indexes.sql'`,
+	); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := store.pool.Exec(
+			context.Background(),
+			`INSERT INTO schema_migrations (version)
+			 VALUES ('002_auth_state_retention_indexes.sql')
+			 ON CONFLICT DO NOTHING`,
+		); err != nil {
+			t.Errorf("restore migration ledger: %v", err)
+		}
+	})
+	if err := store.Ping(context.Background()); !errors.Is(err, domain.ErrUnavailable) {
+		t.Fatalf("Ping() error = %v; want unavailable", err)
+	}
+}
+
 func TestRollbackUsesBoundedContext(t *testing.T) {
 	transaction := &rollbackRecorder{}
 	rollback(transaction)

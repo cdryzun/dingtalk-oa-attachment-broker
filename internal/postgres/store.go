@@ -61,6 +61,21 @@ func (store *Store) Ping(ctx context.Context) error {
 	if !ready {
 		return fmt.Errorf("%w: PostgreSQL schema is not migrated", domain.ErrUnavailable)
 	}
+	versions, err := migrationVersions()
+	if err != nil {
+		return fmt.Errorf("%w: inspect embedded migrations: %v", domain.ErrUnavailable, err)
+	}
+	var applied int
+	if err := store.pool.QueryRow(
+		ctx,
+		`SELECT count(*) FROM schema_migrations WHERE version = ANY($1::text[])`,
+		versions,
+	).Scan(&applied); err != nil {
+		return fmt.Errorf("check PostgreSQL migration ledger: %w", err)
+	}
+	if applied != len(versions) {
+		return fmt.Errorf("%w: PostgreSQL schema migrations are incomplete", domain.ErrUnavailable)
+	}
 	return nil
 }
 

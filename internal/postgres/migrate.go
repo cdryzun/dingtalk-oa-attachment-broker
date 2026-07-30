@@ -37,23 +37,34 @@ func (store *Store) Migrate(ctx context.Context) error {
 		return fmt.Errorf("create migration ledger: %w", err)
 	}
 
-	entries, err := fs.ReadDir(migrationFiles, "migrations")
+	versions, err := migrationVersions()
 	if err != nil {
-		return fmt.Errorf("read embedded migrations: %w", err)
+		return err
 	}
-	sort.Slice(entries, func(left, right int) bool {
-		return entries[left].Name() < entries[right].Name()
-	})
-
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
-			continue
-		}
-		if err := store.applyMigration(ctx, connection, entry.Name()); err != nil {
+	for _, version := range versions {
+		if err := store.applyMigration(ctx, connection, version); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func migrationVersions() ([]string, error) {
+	entries, err := fs.ReadDir(migrationFiles, "migrations")
+	if err != nil {
+		return nil, fmt.Errorf("read embedded migrations: %w", err)
+	}
+	versions := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".sql") {
+			versions = append(versions, entry.Name())
+		}
+	}
+	if len(versions) == 0 {
+		return nil, fmt.Errorf("no embedded migrations")
+	}
+	sort.Strings(versions)
+	return versions, nil
 }
 
 func (store *Store) applyMigration(
