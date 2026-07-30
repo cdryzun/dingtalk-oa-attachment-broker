@@ -340,12 +340,33 @@ func TestDeviceAuthorizationAndOAuthRoutes(t *testing.T) {
 	if startResponse.Header().Get("Content-Security-Policy") == "" {
 		t.Error("start page has no Content-Security-Policy")
 	}
+	cookies := startResponse.Result().Cookies()
+	if len(cookies) != 1 || !strings.Contains(startResponse.Body.String(), cookies[0].Value) {
+		t.Fatalf("start confirmation cookie/form mismatch: cookies=%v", cookies)
+	}
 
-	startRequest = httptest.NewRequest(
+	crossSiteRequest := httptest.NewRequest(
 		http.MethodPost,
 		"/auth/dingtalk/start?user_code=ABCD-EFGH",
 		nil,
 	)
+	crossSiteResponse := httptest.NewRecorder()
+	handler.ServeHTTP(crossSiteResponse, crossSiteRequest)
+	if crossSiteResponse.Code != http.StatusForbidden || fakeAuth.startCalls != 0 {
+		t.Fatalf(
+			"cross-site start = %d, calls = %d; want 403 and 0",
+			crossSiteResponse.Code,
+			fakeAuth.startCalls,
+		)
+	}
+
+	startRequest = httptest.NewRequest(
+		http.MethodPost,
+		"/auth/dingtalk/start?user_code=ABCD-EFGH",
+		strings.NewReader("confirmation="+cookies[0].Value),
+	)
+	startRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	startRequest.AddCookie(cookies[0])
 	startResponse = httptest.NewRecorder()
 	handler.ServeHTTP(startResponse, startRequest)
 	if startResponse.Code != http.StatusSeeOther {
@@ -762,6 +783,20 @@ func TestAttachmentAPIStructuredLogsCoverListAndStreamFailures(t *testing.T) {
 			streamResponse.Code,
 			streamResponse.Body.String(),
 		)
+	}
+	metricsResponse := httptest.NewRecorder()
+	handler.MetricsHandler().ServeHTTP(
+		metricsResponse,
+		httptest.NewRequest(http.MethodGet, "/metrics", nil),
+	)
+	if !strings.Contains(
+		metricsResponse.Body.String(),
+		`method="GET",route="/api/v1/approvals/{processInstanceId}/attachments/{fileId}/content",status="200"} 1`,
+	) {
+		t.Errorf("stream failure is missing from request metrics:\n%s", metricsResponse.Body)
+	}
+	if strings.Count(logOutput.String(), "HTTP request completed") != 3 {
+		t.Errorf("completion logs = %s", logOutput.String())
 	}
 
 	records := attachmentLogRecords(t, logOutput.String())

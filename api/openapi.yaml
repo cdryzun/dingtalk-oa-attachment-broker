@@ -76,6 +76,25 @@ paths:
           schema:
             type: string
             pattern: "^[A-Z2-9]{4}-[A-Z2-9]{4}$"
+        - name: dingtalk_oa_start_confirmation
+          in: cookie
+          required: true
+          schema:
+            type: string
+            pattern: "^[a-f0-9]{64}$"
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - confirmation
+              properties:
+                confirmation:
+                  type: string
+                  pattern: "^[a-f0-9]{64}$"
       responses:
         "303":
           description: Redirect to the DingTalk authorization page.
@@ -87,6 +106,8 @@ paths:
                 format: uri
         "400":
           $ref: "#/components/responses/InvalidRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -261,6 +282,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "429":
           $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /api/v1/approval-categories:
     get:
       tags:

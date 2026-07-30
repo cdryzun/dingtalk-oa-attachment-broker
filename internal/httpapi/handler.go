@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -30,12 +31,15 @@ import (
 )
 
 const (
-	maxJSONBodyBytes         = 16 * 1024
-	defaultRequestsPerMinute = 120
-	requestIDHeader          = "X-Request-ID"
-	problemTypeBaseURL       = "/problems/"
-	maxForwardedForBytes     = 4096
-	maxForwardedForHops      = 32
+	maxJSONBodyBytes                = 16 * 1024
+	defaultRequestsPerMinute        = 120
+	requestIDHeader                 = "X-Request-ID"
+	problemTypeBaseURL              = "/problems/"
+	maxForwardedForBytes            = 4096
+	maxForwardedForHops             = 32
+	authorizationConfirmationCookie = "dingtalk_oa_start_confirmation"
+	maxAuthorizationStartBodyBytes  = 1024
+	authorizationConfirmationMaxAge = 5 * time.Minute
 )
 
 type AuthService interface {
@@ -157,28 +161,30 @@ func (handler *Handler) ServeHTTP(response http.ResponseWriter, request *http.Re
 	statusResponse := &statusResponseWriter{ResponseWriter: response}
 	route := routeLabel(request.URL.Path)
 	sourceAddress := handler.clientAddress(request)
+	defer func() {
+		if statusResponse.status == 0 {
+			statusResponse.status = http.StatusOK
+		}
+		duration := time.Since(startedAt)
+		handler.metrics.observeRequest(request.Method, route, statusResponse.status, duration)
+		handler.logger.InfoContext(
+			request.Context(),
+			"HTTP request completed",
+			"requestId", requestID,
+			"method", request.Method,
+			"path", request.URL.Path,
+			"route", route,
+			"status", statusResponse.status,
+			"durationMs", duration.Milliseconds(),
+			"remoteAddress", sourceAddress,
+		)
+	}()
 
 	if shouldRateLimit(request.URL.Path) && !handler.rateLimiter.Allow(sourceAddress) {
 		writeProblem(statusResponse, request, domain.ErrRateLimited)
 	} else {
 		handler.route(statusResponse, request)
 	}
-	if statusResponse.status == 0 {
-		statusResponse.status = http.StatusOK
-	}
-	duration := time.Since(startedAt)
-	handler.metrics.observeRequest(request.Method, route, statusResponse.status, duration)
-	handler.logger.InfoContext(
-		request.Context(),
-		"HTTP request completed",
-		"requestId", requestID,
-		"method", request.Method,
-		"path", request.URL.Path,
-		"route", route,
-		"status", statusResponse.status,
-		"durationMs", duration.Milliseconds(),
-		"remoteAddress", sourceAddress,
-	)
 }
 
 func (handler *Handler) route(response http.ResponseWriter, request *http.Request) {
@@ -512,6 +518,19 @@ func (handler *Handler) handleAuthorizationStartPage(
 		)
 		return
 	}
+	confirmation, err := newAuthorizationConfirmation()
+	if err != nil {
+		writeProblem(response, request, domain.ErrUnavailable)
+		return
+	}
+	http.SetCookie(response, &http.Cookie{
+		Name:     authorizationConfirmationCookie,
+		Value:    confirmation,
+		Path:     "/auth/dingtalk/start",
+		MaxAge:   int(authorizationConfirmationMaxAge / time.Second),
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+	})
 	action := html.EscapeString(
 		"/auth/dingtalk/start?user_code=" + url.QueryEscape(userCode),
 	)
@@ -527,14 +546,41 @@ func (handler *Handler) handleAuthorizationStartPage(
 			"<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"+
 			"<title>DingTalk authorization</title></head><body><main>"+
 			"<h1>DingTalk authorization</h1><form method=\"post\" action=\""+action+"\">"+
+			"<input type=\"hidden\" name=\"confirmation\" value=\""+confirmation+"\">"+
 			"<button type=\"submit\">Continue to DingTalk</button></form></main></body></html>",
 	)
+}
+
+func newAuthorizationConfirmation() (string, error) {
+	var random [32]byte
+	if _, err := rand.Read(random[:]); err != nil {
+		return "", fmt.Errorf("generate authorization confirmation: %w", err)
+	}
+	return hex.EncodeToString(random[:]), nil
 }
 
 func (handler *Handler) handleAuthorizationStart(
 	response http.ResponseWriter,
 	request *http.Request,
 ) {
+	request.Body = http.MaxBytesReader(response, request.Body, maxAuthorizationStartBodyBytes)
+	if err := request.ParseForm(); err != nil {
+		writeProblem(
+			response,
+			request,
+			fmt.Errorf("%w: invalid authorization confirmation", domain.ErrInvalidInput),
+		)
+		return
+	}
+	cookie, cookieErr := request.Cookie(authorizationConfirmationCookie)
+	confirmation := request.PostForm.Get("confirmation")
+	if cookieErr != nil || len(confirmation) != 64 || len(cookie.Value) != 64 || subtle.ConstantTimeCompare(
+		[]byte(confirmation),
+		[]byte(cookie.Value),
+	) != 1 {
+		writeProblem(response, request, domain.ErrForbidden)
+		return
+	}
 	authorizationURL, err := handler.auth.StartAuthorization(
 		request.Context(),
 		request.URL.Query().Get("user_code"),
@@ -548,6 +594,13 @@ func (handler *Handler) handleAuthorizationStart(
 		writeProblem(response, request, domain.ErrUpstream)
 		return
 	}
+	http.SetCookie(response, &http.Cookie{
+		Name:     authorizationConfirmationCookie,
+		Path:     "/auth/dingtalk/start",
+		MaxAge:   -1,
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+	})
 	http.Redirect(response, request, parsed.String(), http.StatusSeeOther)
 }
 
