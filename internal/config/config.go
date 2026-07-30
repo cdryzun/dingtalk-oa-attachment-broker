@@ -357,6 +357,15 @@ func parsePublicBaseURL(raw string) (*url.URL, error) {
 	if parsed.Host == "" || parsed.Hostname() == "" {
 		return nil, fmt.Errorf("absolute URL is required")
 	}
+	if strings.HasSuffix(parsed.Host, ":") {
+		return nil, fmt.Errorf("port is required after colon")
+	}
+	if port := parsed.Port(); port != "" {
+		value, portErr := strconv.ParseUint(port, 10, 16)
+		if portErr != nil || value == 0 {
+			return nil, fmt.Errorf("port must be between 1 and 65535")
+		}
+	}
 	if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return nil, fmt.Errorf("credentials, query, and fragment are not allowed")
 	}

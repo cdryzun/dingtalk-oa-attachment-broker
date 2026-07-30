@@ -433,7 +433,7 @@ func (store *Store) GetSessionByAccessToken(
 		return domain.User{}, domain.ErrUnauthorized
 	}
 	if err != nil {
-		return domain.User{}, fmt.Errorf("load session by access token: %w", err)
+		return domain.User{}, fmt.Errorf("%w: load session by access token: %w", domain.ErrUnavailable, err)
 	}
 	return user, nil
 }

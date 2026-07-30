@@ -491,6 +491,16 @@ func TestClassifyWriteErrorMapsDatabaseFailures(t *testing.T) {
 	}
 }
 
+func TestGetSessionDatabaseFailureIsUnavailable(t *testing.T) {
+	store := openTestStore(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := store.GetSessionByAccessToken(ctx, []byte("access-token"), time.Now())
+	if !errors.Is(err, domain.ErrUnavailable) || !errors.Is(err, context.Canceled) {
+		t.Fatalf("GetSessionByAccessToken() error = %v; want unavailable and canceled", err)
+	}
+}
+
 type rollbackRecorder struct {
 	called   bool
 	deadline time.Time

@@ -142,6 +142,8 @@ func TestLoadRejectsInvalidConfiguration(t *testing.T) {
 		{name: "invalid metrics address", key: "METRICS_ADDRESS", value: "not-an-address", wantError: "METRICS_ADDRESS"},
 		{name: "invalid public URL", key: "PUBLIC_BASE_URL", value: "not-a-url", wantError: "PUBLIC_BASE_URL"},
 		{name: "insecure public URL", key: "PUBLIC_BASE_URL", value: "http://broker.example.com", wantError: "HTTPS"},
+		{name: "zero public URL port", key: "PUBLIC_BASE_URL", value: "https://broker.example.com:0", wantError: "port"},
+		{name: "oversized public URL port", key: "PUBLIC_BASE_URL", value: "https://broker.example.com:99999", wantError: "port"},
 		{name: "OAuth URL with query", key: "DINGTALK_OAUTH_AUTHORIZE_URL", value: "https://login.example.com/oauth?prompt=consent", wantError: "query"},
 		{name: "missing client ID", key: "DINGTALK_CLIENT_ID", value: "", wantError: "DINGTALK_CLIENT_ID"},
 		{name: "missing client secret", key: "DINGTALK_CLIENT_SECRET", value: "", wantError: "DINGTALK_CLIENT_SECRET"},
