@@ -384,6 +384,15 @@ func parseApprovalSearchQuery(request *http.Request) (approvals.SearchQuery, err
 			domain.ErrInvalidInput,
 		)
 	}
+	for _, parameter := range []string{"createdAfter", "createdBefore", "limit"} {
+		if _, supplied := values[parameter]; supplied && strings.TrimSpace(values.Get(parameter)) == "" {
+			return approvals.SearchQuery{}, fmt.Errorf(
+				"%w: approval search parameter %q must not be empty",
+				domain.ErrInvalidInput,
+				parameter,
+			)
+		}
+	}
 	if _, supplied := values["q"]; supplied && result.Keyword == "" {
 		return approvals.SearchQuery{}, fmt.Errorf(
 			"%w: approval search keyword must not be empty",
