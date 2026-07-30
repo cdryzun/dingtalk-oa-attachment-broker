@@ -129,6 +129,46 @@ func TestDeniedSearchAuditSurvivesRequestCancellation(t *testing.T) {
 	}
 }
 
+func TestSearchDoesNotAuditSiblingCancellation(t *testing.T) {
+	siblingStarted := make(chan struct{})
+	provider := &fakeProvider{
+		pages: map[string]domain.ApprovalInstanceIDPage{
+			"PROC-DIRECT": {ProcessInstanceIDs: []string{"failed", "sibling"}},
+		},
+		approvalFunctions: map[string]func(context.Context) (domain.Approval, error){
+			"failed": func(context.Context) (domain.Approval, error) {
+				<-siblingStarted
+				return domain.Approval{}, domain.ErrUpstream
+			},
+			"sibling": func(ctx context.Context) (domain.Approval, error) {
+				close(siblingStarted)
+				<-ctx.Done()
+				return domain.Approval{}, ctx.Err()
+			},
+		},
+	}
+	audit := &recordingAudit{}
+	service := newTestService(t, provider, audit)
+	user := domain.User{CorpID: "corp", UserID: "authorized"}
+
+	_, err := service.Search(
+		context.Background(),
+		user,
+		SearchQuery{CategoryID: service.categoryID(user, "PROC-DIRECT"), Limit: 10},
+		"request-id",
+	)
+	if !errors.Is(err, domain.ErrUpstream) {
+		t.Fatalf("Search() error = %v; want upstream error", err)
+	}
+	decisions := audit.decisions()
+	if decisions["failed"] != domain.AuditDecisionDenied {
+		t.Fatalf("audit decisions = %#v; want failed candidate denial", decisions)
+	}
+	if _, exists := decisions["sibling"]; exists {
+		t.Fatalf("audit decisions = %#v; sibling cancellation must not be audited", decisions)
+	}
+}
+
 func TestSearchCursorContinuesProcessCodeAndRejectsTampering(t *testing.T) {
 	provider := &fakeProvider{
 		pages: map[string]domain.ApprovalInstanceIDPage{
@@ -694,16 +734,17 @@ func approvalFixture(
 }
 
 type fakeProvider struct {
-	mu              sync.Mutex
-	templatePages   map[int64]domain.VisibleApprovalTemplatePage
-	templateError   error
-	templateQueries []domain.VisibleApprovalTemplateQuery
-	pages           map[string]domain.ApprovalInstanceIDPage
-	pageSequences   map[string]map[int64]domain.ApprovalInstanceIDPage
-	approvals       map[string]domain.Approval
-	errors          map[string]error
-	queries         []domain.ApprovalInstanceIDQuery
-	approvalHook    func()
+	mu                sync.Mutex
+	templatePages     map[int64]domain.VisibleApprovalTemplatePage
+	templateError     error
+	templateQueries   []domain.VisibleApprovalTemplateQuery
+	pages             map[string]domain.ApprovalInstanceIDPage
+	pageSequences     map[string]map[int64]domain.ApprovalInstanceIDPage
+	approvals         map[string]domain.Approval
+	errors            map[string]error
+	queries           []domain.ApprovalInstanceIDQuery
+	approvalHook      func()
+	approvalFunctions map[string]func(context.Context) (domain.Approval, error)
 }
 
 func (fake *fakeProvider) ListVisibleApprovalTemplates(
@@ -733,16 +774,20 @@ func (fake *fakeProvider) ListApprovalInstanceIDs(
 }
 
 func (fake *fakeProvider) Approval(
-	_ context.Context,
+	ctx context.Context,
 	processInstanceID string,
 ) (domain.Approval, error) {
 	fake.mu.Lock()
 	hook := fake.approvalHook
+	approvalFunction := fake.approvalFunctions[processInstanceID]
 	err := fake.errors[processInstanceID]
 	approval := fake.approvals[processInstanceID]
 	fake.mu.Unlock()
 	if hook != nil {
 		hook()
+	}
+	if approvalFunction != nil {
+		return approvalFunction(ctx)
 	}
 	if err != nil {
 		return domain.Approval{}, err

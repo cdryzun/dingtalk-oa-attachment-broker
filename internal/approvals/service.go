@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -510,6 +511,9 @@ func (service *Service) authorizeCandidates(
 				current.processInstanceID,
 			)
 			if err != nil {
+				if errors.Is(err, context.Canceled) && groupContext.Err() != nil && ctx.Err() == nil {
+					return nil
+				}
 				return service.recordDenied(
 					groupContext,
 					user,
