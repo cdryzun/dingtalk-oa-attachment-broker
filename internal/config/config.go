@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/net/idna"
+
 	"github.com/cdryzun/dingtalk-oa-attachment-broker/internal/domain"
 )
 
@@ -379,6 +381,21 @@ func parsePublicBaseURL(raw string) (*url.URL, error) {
 	}
 	if parsed.Scheme != "https" && !(parsed.Scheme == "http" && isLoopbackHost(parsed.Hostname())) {
 		return nil, fmt.Errorf("HTTPS is required except for loopback development")
+	}
+	hostname := parsed.Hostname()
+	canonicalHostname := hostname
+	if net.ParseIP(hostname) == nil {
+		canonicalHostname, err = idna.Lookup.ToASCII(hostname)
+		if err != nil {
+			return nil, fmt.Errorf("hostname is not valid IDNA: %w", err)
+		}
+	}
+	if port := parsed.Port(); port != "" {
+		parsed.Host = net.JoinHostPort(canonicalHostname, port)
+	} else if strings.Contains(canonicalHostname, ":") {
+		parsed.Host = "[" + canonicalHostname + "]"
+	} else {
+		parsed.Host = canonicalHostname
 	}
 	parsed.Path = ""
 	return parsed, nil

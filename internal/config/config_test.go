@@ -131,6 +131,19 @@ func TestLoadAllowsLoopbackHTTPForLocalDevelopment(t *testing.T) {
 	}
 }
 
+func TestLoadCanonicalizesUnicodePublicHostname(t *testing.T) {
+	setValidEnvironment(t)
+	t.Setenv("PUBLIC_BASE_URL", "https://例子.测试")
+
+	got, err := Load()
+	if err != nil {
+		t.Fatalf("Load() returned an unexpected error: %v", err)
+	}
+	if got.PublicBaseURL.Host != "xn--fsqu00a.xn--0zwm56d" {
+		t.Errorf("PublicBaseURL host = %q; want IDNA ASCII", got.PublicBaseURL.Host)
+	}
+}
+
 func TestLoadRejectsInvalidConfiguration(t *testing.T) {
 	tests := []struct {
 		name      string
