@@ -4,6 +4,7 @@ import importlib.util
 import io
 import json
 import os
+import stat
 import subprocess
 import sys
 import threading
@@ -385,6 +386,7 @@ def fixture_server() -> Iterator[tuple[str, dict[str, Any]]]:
         ("http://localhost", "http://localhost"),
         ("https://BROKER.EXAMPLE.TEST:443", "https://broker.example.test"),
         ("http://LOCALHOST:80", "http://localhost"),
+        ("https://例子.测试", "https://xn--fsqu00a.xn--0zwm56d"),
     ],
 )
 def test_validate_broker_url_accepts_secure_origins(
@@ -444,6 +446,7 @@ def test_http_error_converts_interrupted_body_read() -> None:
         "https://broker.example.test/api",
         "https://broker.example.test?token=value",
         "https://broker.example.test:bad",
+        "https://\ud800.example.test",
     ],
 )
 def test_validate_broker_url_rejects_unsafe_values(value: str) -> None:
@@ -653,19 +656,34 @@ def test_expired_refresh_token_requires_new_login() -> None:
     assert state["authorizations"] == ["Bearer access-old-secret"]
 
 
-def test_stale_refresh_uses_credentials_saved_by_another_process() -> None:
+def test_stale_refresh_waits_for_credentials_saved_by_another_process() -> None:
     with fixture_server() as (origin, _):
         store = MemoryStore("access-old-secret", "refresh-old-secret")
         client = CLIENT.BrokerClient(origin, store)
+        winner_saved = False
+        recovery_loads = 0
+        original_load = store.load
+
+        def delayed_load() -> CLIENT.Credentials:
+            nonlocal recovery_loads
+            if winner_saved:
+                recovery_loads += 1
+                if recovery_loads == 1:
+                    return CLIENT.Credentials("access-old-secret", "refresh-old-secret")
+            return original_load()
 
         def stale_refresh(_refresh_token: str) -> dict[str, Any]:
+            nonlocal winner_saved
             store.save("access-new-secret", "refresh-new-secret")
+            winner_saved = True
             raise CLIENT.ClientError("unauthorized", "stale", status=401)
 
+        store.load = delayed_load  # type: ignore[method-assign]
         client.refresh_session = stale_refresh  # type: ignore[method-assign]
         identity = client.current_identity()
 
     assert identity["data"]["userId"] == "user-fixture"
+    assert recovery_loads >= 2
     assert store.saved == [("access-new-secret", "refresh-new-secret")]
 
 
@@ -1431,6 +1449,32 @@ def test_json_credentials_reject_symbolic_link(tmp_path: Path) -> None:
 
     assert captured.value.code == "credential_store_error"
 
+
+def test_json_credentials_reject_non_regular_file_before_opening(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    credential_file = tmp_path / ".runtime" / "auth.json"
+    store = CLIENT.JsonCredentialStore(
+        "https://broker.example.test",
+        credential_file,
+    )
+    store.save("access-sensitive", "refresh-sensitive")
+    original_lstat = Path.lstat
+    regular_stat = credential_file.lstat()
+    fifo_stat = os.stat_result((stat.S_IFIFO | 0o600, *regular_stat[1:]))
+
+    def fake_lstat(path: Path) -> os.stat_result:
+        if path == credential_file:
+            return fifo_stat
+        return original_lstat(path)
+
+    monkeypatch.setattr(Path, "lstat", fake_lstat)
+
+    with pytest.raises(CLIENT.ClientError) as captured:
+        store.load()
+
+    assert captured.value.code == "credential_store_error"
 
 def test_json_credentials_reject_symbolic_link_parent_on_load(
     tmp_path: Path,

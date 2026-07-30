@@ -36,6 +36,8 @@ MAX_KEYWORD_CHARACTERS = 100
 MAX_CATEGORY_DISCOVERY_PAGES = 100
 DEFAULT_TIMEOUT_SECONDS = 300.0
 MAX_RETRY_AFTER_SECONDS = 3_600
+REFRESH_RECOVERY_WAIT_SECONDS = 1.0
+REFRESH_RECOVERY_POLL_SECONDS = 0.05
 IS_WINDOWS = os.name == "nt"
 
 
@@ -131,14 +133,20 @@ class JsonCredentialStore(CredentialStore):
     def load(self) -> Credentials:
         try:
             self._validate_parent_directory()
-            if not self.path.exists():
+            try:
+                file_stat = self.path.lstat()
+            except FileNotFoundError:
                 return Credentials(None, None)
-            if self.path.is_symlink():
+            if stat.S_ISLNK(file_stat.st_mode):
                 raise ClientError(
                     "credential_store_error",
                     "The local credential cache must not be a symbolic link.",
                 )
-            file_stat = self.path.stat()
+            if not stat.S_ISREG(file_stat.st_mode):
+                raise ClientError(
+                    "credential_store_error",
+                    "The local credential cache must be a regular file.",
+                )
             if file_stat.st_size > CREDENTIAL_FILE_MAX_BYTES:
                 raise ClientError(
                     "credential_store_error",
@@ -471,13 +479,19 @@ class BrokerClient:
             session = self.refresh_session(credentials.refresh_token)
         except ClientError as error:
             if error.status in {401, 409, 410}:
-                replacement = self.store.load()
-                if replacement != credentials and replacement.access_token:
-                    return self._open(
-                        method,
-                        path,
-                        bearer=replacement.access_token,
-                    )
+                deadline = time.monotonic() + REFRESH_RECOVERY_WAIT_SECONDS
+                while True:
+                    replacement = self.store.load()
+                    if replacement != credentials and replacement.access_token:
+                        return self._open(
+                            method,
+                            path,
+                            bearer=replacement.access_token,
+                        )
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        break
+                    time.sleep(min(REFRESH_RECOVERY_POLL_SECONDS, remaining))
                 raise ClientError(
                     "reauthentication_required",
                     "The Broker session expired; run login again.",
@@ -540,7 +554,13 @@ class BrokerClient:
             )
         except urllib.error.HTTPError as error:
             raise _http_client_error(error) from None
-        except (urllib.error.URLError, TimeoutError, OSError) as error:
+        except (
+            urllib.error.URLError,
+            http.client.HTTPException,
+            TimeoutError,
+            UnicodeError,
+            OSError,
+        ) as error:
             raise ClientError(
                 "network_error",
                 f"Broker request failed: {type(error).__name__}.",
@@ -557,9 +577,12 @@ def validate_broker_url(value: Optional[str]) -> str:
         )
     try:
         parsed = urllib.parse.urlsplit(raw)
-        hostname = (parsed.hostname or "").lower()
+        hostname = parsed.hostname or ""
         port = parsed.port
-    except ValueError:
+        if ":" not in hostname:
+            hostname = hostname.encode("idna").decode("ascii")
+        hostname = hostname.lower()
+    except (UnicodeError, ValueError):
         raise ClientError(
             "invalid_broker_url",
             "Broker URL authority is invalid.",
