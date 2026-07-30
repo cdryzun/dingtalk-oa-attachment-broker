@@ -1837,6 +1837,17 @@ def test_cli_emits_utf8_json_when_inherited_stdout_encoding_is_gbk(
     assert payload["data"]["displayName"] == "\u00a0阳尊"
 
 
+def test_main_emits_json_for_argument_errors(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    exit_code = CLIENT.main(["--broker-url", "http://127.0.0.1:1"])
+
+    assert exit_code == 1
+    error_output = capsys.readouterr().err
+    assert json.loads(error_output)["code"] == "invalid_arguments"
+    assert "usage:" not in error_output
+
+
 def test_main_reports_reauthentication_for_empty_cache(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

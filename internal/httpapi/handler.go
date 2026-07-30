@@ -372,6 +372,12 @@ func parseApprovalSearchQuery(request *http.Request) (approvals.SearchQuery, err
 		Keyword:    strings.TrimSpace(values.Get("q")),
 		Cursor:     strings.TrimSpace(values.Get("cursor")),
 	}
+	if _, supplied := values["cursor"]; supplied && result.Cursor == "" {
+		return approvals.SearchQuery{}, fmt.Errorf(
+			"%w: approval search cursor must not be empty",
+			domain.ErrInvalidInput,
+		)
+	}
 	if result.CategoryID == "" {
 		return approvals.SearchQuery{}, fmt.Errorf(
 			"%w: approval category is required",
@@ -457,6 +463,12 @@ func parseCategoryDiscoveryQuery(
 	if _, supplied := values["q"]; supplied && result.Keyword == "" {
 		return approvals.CategoryDiscoveryQuery{}, fmt.Errorf(
 			"%w: approval category keyword must not be empty",
+			domain.ErrInvalidInput,
+		)
+	}
+	if _, supplied := values["cursor"]; supplied && result.Cursor == "" {
+		return approvals.CategoryDiscoveryQuery{}, fmt.Errorf(
+			"%w: approval category cursor must not be empty",
 			domain.ErrInvalidInput,
 		)
 	}

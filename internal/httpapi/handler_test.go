@@ -1005,11 +1005,15 @@ func TestApprovalSearchRejectsUnknownRepeatedAndInvalidParameters(t *testing.T) 
 		"/api/v1/approvals?category=firmware-flow&limit=many",
 		"/api/v1/approvals?category=firmware-flow&q=",
 		"/api/v1/approvals?category=firmware-flow&cursor=signed.cursor&q=firmware",
+		"/api/v1/approvals?category=firmware-flow&cursor=",
+		"/api/v1/approvals?category=firmware-flow&cursor=%20",
 		"/api/v1/approval-categories?details=true",
 		"/api/v1/me/approval-categories?unknown=true",
 		"/api/v1/me/approval-categories?q=",
 		"/api/v1/me/approval-categories?q=one&q=two",
 		"/api/v1/me/approval-categories?cursor=signed.cursor&q=firmware",
+		"/api/v1/me/approval-categories?cursor=",
+		"/api/v1/me/approval-categories?cursor=%20",
 		"/api/v1/me/approval-categories?createdAfter=2026-06-01T00%3A00%3A00Z",
 	} {
 		request := authenticatedRequest(t, http.MethodGet, path, nil)

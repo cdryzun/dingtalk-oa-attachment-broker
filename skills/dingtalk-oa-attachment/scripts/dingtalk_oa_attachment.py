@@ -59,6 +59,14 @@ class ClientError(Exception):
         self.retry_after_seconds = retry_after_seconds
 
 
+class StructuredArgumentParser(argparse.ArgumentParser):
+    def error(self, _message: str) -> None:
+        raise ClientError(
+            "invalid_arguments",
+            "Command-line arguments are invalid.",
+        )
+
+
 @dataclass(frozen=True)
 class Credentials:
     access_token: Optional[str]
@@ -1369,7 +1377,7 @@ def configure_standard_streams() -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = StructuredArgumentParser(
         description="Secure DingTalk OA Attachment Broker client.",
     )
     parser.add_argument(
