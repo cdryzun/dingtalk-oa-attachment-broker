@@ -110,6 +110,28 @@ func TestDownloaderRejectsPartialContent(t *testing.T) {
 	}
 }
 
+func TestDownloaderRejectsEncodedContent(t *testing.T) {
+	body := &trackingReadCloser{Reader: strings.NewReader("encoded")}
+	downloader := newDownloaderForTest(
+		&http.Client{Transport: roundTripperFunc(func(request *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Encoding": []string{"gzip"}},
+				Body:       body,
+				Request:    request,
+			}, nil
+		})},
+		1024,
+	)
+	_, err := downloader.Open(
+		context.Background(),
+		mustURL(t, "https://download.example.test/file"),
+	)
+	if !errors.Is(err, domain.ErrUpstream) || !body.closed {
+		t.Fatalf("encoded download error = %v, body closed = %v", err, body.closed)
+	}
+}
+
 func TestSecureDialerRejectsPrivateDNSAnswers(t *testing.T) {
 	dialer := secureDialer{
 		resolver: staticResolver{addresses: []net.IPAddr{{IP: net.ParseIP("127.0.0.1")}}},

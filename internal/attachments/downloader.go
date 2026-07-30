@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/cdryzun/dingtalk-oa-attachment-broker/internal/domain"
@@ -130,6 +131,11 @@ func (downloader *Downloader) Open(
 				response.StatusCode,
 			)
 		}
+	}
+	contentEncoding := strings.TrimSpace(response.Header.Get("Content-Encoding"))
+	if response.Uncompressed || contentEncoding != "" && !strings.EqualFold(contentEncoding, "identity") {
+		_ = response.Body.Close()
+		return nil, fmt.Errorf("%w: attachment download returned encoded content", domain.ErrUpstream)
 	}
 	if response.ContentLength > downloader.maxBytes {
 		_ = response.Body.Close()
