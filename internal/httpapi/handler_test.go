@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -332,8 +333,9 @@ func TestDeviceAuthorizationAndOAuthRoutes(t *testing.T) {
 	startResponse := httptest.NewRecorder()
 	handler.ServeHTTP(startResponse, startRequest)
 	if startResponse.Code != http.StatusOK ||
-		!strings.Contains(startResponse.Body.String(), "Continue to DingTalk") {
-		t.Fatalf("start page = %d %s; want confirmation form", startResponse.Code, startResponse.Body)
+		!strings.Contains(startResponse.Body.String(), "Continue to DingTalk") ||
+		!strings.Contains(startResponse.Body.String(), "ABCD-EFGH") {
+		t.Fatalf("start page = %d %s; want confirmation form and device code", startResponse.Code, startResponse.Body)
 	}
 	if fakeAuth.startCalls != 0 {
 		t.Fatalf("GET start calls = %d; want 0", fakeAuth.startCalls)
@@ -376,11 +378,29 @@ func TestDeviceAuthorizationAndOAuthRoutes(t *testing.T) {
 			fakeAuth.startCalls,
 		)
 	}
+	mismatchRequest := httptest.NewRequest(
+		http.MethodPost,
+		"/auth/dingtalk/start?user_code=ABCD-EFGH",
+		strings.NewReader(url.Values{
+			"confirmation":           {cookies[0].Value},
+			"user_code_confirmation": {"WXYZ-2345"},
+		}.Encode()),
+	)
+	mismatchRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	mismatchRequest.AddCookie(cookies[0])
+	mismatchResponse := httptest.NewRecorder()
+	handler.ServeHTTP(mismatchResponse, mismatchRequest)
+	if mismatchResponse.Code != http.StatusForbidden || fakeAuth.startCalls != 0 {
+		t.Fatalf("mismatched device code = %d, calls = %d; want 403 and 0", mismatchResponse.Code, fakeAuth.startCalls)
+	}
 
 	startRequest = httptest.NewRequest(
 		http.MethodPost,
 		"/auth/dingtalk/start?user_code=ABCD-EFGH",
-		strings.NewReader("confirmation="+cookies[0].Value),
+		strings.NewReader(url.Values{
+			"confirmation":           {cookies[0].Value},
+			"user_code_confirmation": {"ABCD-EFGH"},
+		}.Encode()),
 	)
 	startRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	startRequest.AddCookie(cookies[0])

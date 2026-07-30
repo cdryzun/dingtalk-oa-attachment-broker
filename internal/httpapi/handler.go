@@ -566,6 +566,7 @@ func (handler *Handler) handleAuthorizationStartPage(
 	action := html.EscapeString(
 		"/auth/dingtalk/start?user_code=" + url.QueryEscape(userCode),
 	)
+	escapedUserCode := html.EscapeString(userCode)
 	response.Header().Set(
 		"Content-Security-Policy",
 		"default-src 'none'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
@@ -577,8 +578,13 @@ func (handler *Handler) handleAuthorizationStartPage(
 		"<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"+
 			"<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"+
 			"<title>DingTalk authorization</title></head><body><main>"+
-			"<h1>DingTalk authorization</h1><form method=\"post\" action=\""+action+"\">"+
+			"<h1>Confirm device authorization</h1>"+
+			"<p>Device code: <strong><code>"+escapedUserCode+"</code></strong></p>"+
+			"<form method=\"post\" action=\""+action+"\">"+
 			"<input type=\"hidden\" name=\"confirmation\" value=\""+confirmation+"\">"+
+			"<label>Enter the code shown in your CLI "+
+			"<input name=\"user_code_confirmation\" pattern=\"[A-Z2-9]{4}-[A-Z2-9]{4}\" "+
+			"autocomplete=\"off\" spellcheck=\"false\" required></label>"+
 			"<button type=\"submit\">Continue to DingTalk</button></form></main></body></html>",
 	)
 }
@@ -640,9 +646,15 @@ func (handler *Handler) handleAuthorizationStart(
 		writeProblem(response, request, domain.ErrForbidden)
 		return
 	}
+	userCode := strings.TrimSpace(request.URL.Query().Get("user_code"))
+	confirmedUserCode := strings.TrimSpace(request.PostForm.Get("user_code_confirmation"))
+	if userCode == "" || confirmedUserCode != userCode {
+		writeProblem(response, request, domain.ErrForbidden)
+		return
+	}
 	authorizationURL, err := handler.auth.StartAuthorization(
 		request.Context(),
-		request.URL.Query().Get("user_code"),
+		userCode,
 		confirmation,
 	)
 	if err != nil {
