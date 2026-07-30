@@ -277,6 +277,7 @@ func (service *Service) VisibleCategories(
 	}
 	keyword := ""
 	offset := 0
+	issuedAt := int64(0)
 	if strings.TrimSpace(query.Cursor) != "" {
 		if strings.TrimSpace(query.Keyword) != "" {
 			return CategoryDiscoveryResult{}, fmt.Errorf(
@@ -294,6 +295,7 @@ func (service *Service) VisibleCategories(
 				domain.ErrInvalidInput,
 			)
 		}
+		issuedAt = state.IssuedAt
 		keyword = state.Keyword
 		categories := visibleCategoriesMatchingKeyword(catalog, keyword)
 		if state.CatalogRevision != categoryCatalogRevision(categories) ||
@@ -332,6 +334,7 @@ func (service *Service) VisibleCategories(
 			Keyword:         keyword,
 			CatalogRevision: categoryCatalogRevision(categories),
 			Offset:          end,
+			IssuedAt:        issuedAt,
 		})
 		if err != nil {
 			return CategoryDiscoveryResult{}, err

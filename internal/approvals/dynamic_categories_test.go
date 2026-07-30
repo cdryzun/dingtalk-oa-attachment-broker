@@ -51,6 +51,53 @@ func TestVisibleCatalogOwnerCancellationDoesNotFailOtherCallers(t *testing.T) {
 	}
 }
 
+func TestVisibleCategoriesPreserveCursorIssuanceAcrossPages(t *testing.T) {
+	originalNow := searchNow
+	defer func() { searchNow = originalNow }()
+	templates := make([]domain.VisibleApprovalTemplate, 201)
+	for index := range templates {
+		templates[index] = domain.VisibleApprovalTemplate{
+			ProcessCode: fmt.Sprintf("PROC-%03d", index),
+			Name:        fmt.Sprintf("Approval %03d", index),
+		}
+	}
+	service := newDynamicTestService(t, &fakeProvider{
+		templatePages: map[int64]domain.VisibleApprovalTemplatePage{
+			0: {Templates: templates[:100], NextToken: int64Pointer(1)},
+			1: {Templates: templates[100:200], NextToken: int64Pointer(2)},
+			2: {Templates: templates[200:]},
+		},
+	}, 10)
+	user := domain.User{CorpID: "corp", UserID: "user"}
+	first, err := service.VisibleCategories(
+		context.Background(), user, CategoryDiscoveryQuery{}, "first",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstState, err := service.cursor.DecodeCategory(first.NextCursor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	searchNow = searchNow.Add(30 * time.Minute)
+	second, err := service.VisibleCategories(
+		context.Background(),
+		user,
+		CategoryDiscoveryQuery{Cursor: first.NextCursor},
+		"second",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondState, err := service.cursor.DecodeCategory(second.NextCursor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secondState.IssuedAt != firstState.IssuedAt {
+		t.Errorf("second cursor issuedAt = %d; want %d", secondState.IssuedAt, firstState.IssuedAt)
+	}
+}
+
 func TestVisibleCategoriesComeFromCurrentUsersTemplateCatalog(t *testing.T) {
 	provider := &fakeProvider{
 		templatePages: map[int64]domain.VisibleApprovalTemplatePage{
