@@ -18,8 +18,9 @@ import (
 )
 
 const (
-	userCodeAlphabet              = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-	authorizationRejectionTimeout = 5 * time.Second
+	userCodeAlphabet                 = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+	authorizationRejectionTimeout    = 5 * time.Second
+	authorizationRejectionRetryDelay = 100 * time.Millisecond
 )
 
 type DeviceAuthorization struct {
@@ -337,11 +338,26 @@ func (service *Service) rejectClaimedAuthorization(
 		authorizationRejectionTimeout,
 	)
 	defer cancel()
-	return service.repository.RejectDeviceAuthorization(
-		rejectionContext,
-		deviceCodeHash,
-		service.now(),
-	)
+	for {
+		err := service.repository.RejectDeviceAuthorization(
+			rejectionContext,
+			deviceCodeHash,
+			service.now(),
+		)
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, domain.ErrUnavailable) {
+			return err
+		}
+		timer := time.NewTimer(authorizationRejectionRetryDelay)
+		select {
+		case <-rejectionContext.Done():
+			timer.Stop()
+			return errors.Join(err, rejectionContext.Err())
+		case <-timer.C:
+		}
+	}
 }
 
 func (service *Service) ExchangeDeviceAuthorization(

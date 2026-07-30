@@ -170,16 +170,25 @@ func TestServiceRejectsAuthorizationAndFailuresAfterClaim(t *testing.T) {
 		)
 	}
 
-	repository.rejectErr = domain.ErrUnavailable
+	repository.rejectErrors = []error{domain.ErrUnavailable, nil}
 	err := service.CompleteAuthorization(context.Background(), "failed-state", "authorization-code")
-	if !errors.Is(err, domain.ErrUpstream) || !errors.Is(err, domain.ErrUnavailable) {
-		t.Fatalf("CompleteAuthorization() error = %v; want upstream and unavailable", err)
+	if !errors.Is(err, domain.ErrUpstream) || errors.Is(err, domain.ErrUnavailable) {
+		t.Fatalf("CompleteAuthorization() error = %v; want only upstream error", err)
 	}
-	if repository.rejectCalls != 1 {
-		t.Errorf("reject calls = %d; want 1", repository.rejectCalls)
+	if repository.rejectCalls != 2 {
+		t.Errorf("reject calls = %d; want 2", repository.rejectCalls)
 	}
 	if repository.rejectContextErr != nil || repository.rejectDeadline.IsZero() {
 		t.Errorf("reject context error = %v, deadline = %v", repository.rejectContextErr, repository.rejectDeadline)
+	}
+
+	repository.rejectErr = domain.ErrConflict
+	err = service.CompleteAuthorization(context.Background(), "failed-state", "authorization-code")
+	if !errors.Is(err, domain.ErrUpstream) || !errors.Is(err, domain.ErrConflict) {
+		t.Fatalf("CompleteAuthorization() error = %v; want upstream and conflict", err)
+	}
+	if repository.rejectCalls != 3 {
+		t.Errorf("reject calls = %d; want 3", repository.rejectCalls)
 	}
 }
 
@@ -698,6 +707,7 @@ type recordingRepository struct {
 	rejectedDeviceHash     []byte
 	rejectCalls            int
 	rejectErr              error
+	rejectErrors           []error
 	rejectContextErr       error
 	rejectDeadline         time.Time
 	exchangeDeviceHash     []byte
@@ -774,6 +784,11 @@ func (repository *recordingRepository) RejectDeviceAuthorization(
 	repository.rejectedDeviceHash = append([]byte(nil), deviceCodeHash...)
 	repository.rejectContextErr = ctx.Err()
 	repository.rejectDeadline, _ = ctx.Deadline()
+	if len(repository.rejectErrors) > 0 {
+		err := repository.rejectErrors[0]
+		repository.rejectErrors = repository.rejectErrors[1:]
+		return err
+	}
 	return repository.rejectErr
 }
 
