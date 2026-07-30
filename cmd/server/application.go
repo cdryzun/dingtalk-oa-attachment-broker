@@ -110,6 +110,7 @@ func productionApplication(
 		ReadinessTimeout:  cfg.ReadinessTimeout,
 		RequestsPerMinute: cfg.RequestsPerMinute,
 		TrustedProxyCIDRs: cfg.TrustedProxyCIDRs,
+		SecureCookies:     cfg.PublicBaseURL.Scheme == "https",
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create HTTP handler: %w", err)

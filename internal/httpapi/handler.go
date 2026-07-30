@@ -31,15 +31,16 @@ import (
 )
 
 const (
-	maxJSONBodyBytes                = 16 * 1024
-	defaultRequestsPerMinute        = 120
-	requestIDHeader                 = "X-Request-ID"
-	problemTypeBaseURL              = "/problems/"
-	maxForwardedForBytes            = 4096
-	maxForwardedForHops             = 32
-	authorizationConfirmationCookie = "dingtalk_oa_start_confirmation"
-	maxAuthorizationStartBodyBytes  = 1024
-	authorizationConfirmationMaxAge = 5 * time.Minute
+	maxJSONBodyBytes                      = 16 * 1024
+	defaultRequestsPerMinute              = 120
+	requestIDHeader                       = "X-Request-ID"
+	problemTypeBaseURL                    = "/problems/"
+	maxForwardedForBytes                  = 4096
+	maxForwardedForHops                   = 32
+	authorizationConfirmationCookie       = "dingtalk_oa_start_confirmation"
+	secureAuthorizationConfirmationCookie = "__Host-dingtalk_oa_start_confirmation"
+	maxAuthorizationStartBodyBytes        = 1024
+	authorizationConfirmationMaxAge       = 5 * time.Minute
 )
 
 type AuthService interface {
@@ -86,6 +87,7 @@ type Options struct {
 	ReadinessTimeout  time.Duration
 	RequestsPerMinute int
 	TrustedProxyCIDRs []netip.Prefix
+	SecureCookies     bool
 }
 
 type Handler struct {
@@ -97,6 +99,7 @@ type Handler struct {
 	readinessTimeout  time.Duration
 	rateLimiter       *rateLimiter
 	trustedProxyCIDRs []netip.Prefix
+	secureCookies     bool
 	metrics           *metrics
 }
 
@@ -141,6 +144,7 @@ func NewHandler(options Options) (*Handler, error) {
 		readinessTimeout:  readinessTimeout,
 		rateLimiter:       newRateLimiter(requestsPerMinute, time.Now),
 		trustedProxyCIDRs: append([]netip.Prefix(nil), options.TrustedProxyCIDRs...),
+		secureCookies:     options.SecureCookies,
 		metrics:           newMetrics(registry),
 	}, nil
 }
@@ -544,14 +548,13 @@ func (handler *Handler) handleAuthorizationStartPage(
 		writeProblem(response, request, domain.ErrUnavailable)
 		return
 	}
-	http.SetCookie(response, &http.Cookie{
-		Name:     authorizationConfirmationCookie,
-		Value:    confirmation,
-		Path:     "/auth/dingtalk/start",
-		MaxAge:   int(authorizationConfirmationMaxAge / time.Second),
-		HttpOnly: true,
-		SameSite: http.SameSiteStrictMode,
-	})
+	http.SetCookie(
+		response,
+		handler.newAuthorizationConfirmationCookie(
+			confirmation,
+			int(authorizationConfirmationMaxAge/time.Second),
+		),
+	)
 	action := html.EscapeString(
 		"/auth/dingtalk/start?user_code=" + url.QueryEscape(userCode),
 	)
@@ -580,6 +583,24 @@ func newAuthorizationConfirmation() (string, error) {
 	return hex.EncodeToString(random[:]), nil
 }
 
+func (handler *Handler) newAuthorizationConfirmationCookie(value string, maxAge int) *http.Cookie {
+	name := authorizationConfirmationCookie
+	path := "/auth/dingtalk/start"
+	if handler.secureCookies {
+		name = secureAuthorizationConfirmationCookie
+		path = "/"
+	}
+	return &http.Cookie{
+		Name:     name,
+		Value:    value,
+		Path:     path,
+		MaxAge:   maxAge,
+		HttpOnly: true,
+		Secure:   handler.secureCookies,
+		SameSite: http.SameSiteStrictMode,
+	}
+}
+
 func (handler *Handler) handleAuthorizationStart(
 	response http.ResponseWriter,
 	request *http.Request,
@@ -593,7 +614,7 @@ func (handler *Handler) handleAuthorizationStart(
 		)
 		return
 	}
-	cookie, cookieErr := request.Cookie(authorizationConfirmationCookie)
+	cookie, cookieErr := request.Cookie(handler.newAuthorizationConfirmationCookie("", 0).Name)
 	confirmation := request.PostForm.Get("confirmation")
 	if cookieErr != nil || len(confirmation) != 64 || len(cookie.Value) != 64 || subtle.ConstantTimeCompare(
 		[]byte(confirmation),
@@ -615,13 +636,7 @@ func (handler *Handler) handleAuthorizationStart(
 		writeProblem(response, request, domain.ErrUpstream)
 		return
 	}
-	http.SetCookie(response, &http.Cookie{
-		Name:     authorizationConfirmationCookie,
-		Path:     "/auth/dingtalk/start",
-		MaxAge:   -1,
-		HttpOnly: true,
-		SameSite: http.SameSiteStrictMode,
-	})
+	http.SetCookie(response, handler.newAuthorizationConfirmationCookie("", -1))
 	http.Redirect(response, request, parsed.String(), http.StatusSeeOther)
 }
 

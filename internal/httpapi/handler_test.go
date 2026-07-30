@@ -312,6 +312,7 @@ func TestDeviceAuthorizationAndOAuthRoutes(t *testing.T) {
 		},
 	}
 	handler := newTestHandlerWithAuth(t, fakeAuth)
+	handler.(*Handler).secureCookies = true
 
 	createRequest := httptest.NewRequest(http.MethodPost, "/api/v1/device-authorizations", nil)
 	createResponse := httptest.NewRecorder()
@@ -343,6 +344,9 @@ func TestDeviceAuthorizationAndOAuthRoutes(t *testing.T) {
 	cookies := startResponse.Result().Cookies()
 	if len(cookies) != 1 || !strings.Contains(startResponse.Body.String(), cookies[0].Value) {
 		t.Fatalf("start confirmation cookie/form mismatch: cookies=%v", cookies)
+	}
+	if cookies[0].Name != secureAuthorizationConfirmationCookie || !cookies[0].Secure || cookies[0].Path != "/" {
+		t.Fatalf("secure confirmation cookie = %#v; want __Host-, Secure, Path=/", cookies[0])
 	}
 
 	crossSiteRequest := httptest.NewRequest(
