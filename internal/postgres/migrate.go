@@ -1,0 +1,118 @@
+package postgres
+
+import (
+	"context"
+	"embed"
+	"fmt"
+	"io/fs"
+	"sort"
+	"strings"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+const migrationAdvisoryLockID int64 = 629447160259955787
+
+//go:embed migrations/*.sql
+var migrationFiles embed.FS
+
+func (store *Store) Migrate(ctx context.Context) error {
+	connection, err := store.pool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire migration connection: %w", err)
+	}
+	defer connection.Release()
+
+	if _, err := connection.Exec(ctx, `SELECT pg_advisory_lock($1)`, migrationAdvisoryLockID); err != nil {
+		return fmt.Errorf("acquire migration advisory lock: %w", err)
+	}
+	defer unlockMigration(connection)
+
+	if _, err := connection.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS schema_migrations (
+			version TEXT PRIMARY KEY,
+			applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+		)
+	`); err != nil {
+		return fmt.Errorf("create migration ledger: %w", err)
+	}
+
+	versions, err := migrationVersions()
+	if err != nil {
+		return err
+	}
+	for _, version := range versions {
+		if err := store.applyMigration(ctx, connection, version); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func migrationVersions() ([]string, error) {
+	entries, err := fs.ReadDir(migrationFiles, "migrations")
+	if err != nil {
+		return nil, fmt.Errorf("read embedded migrations: %w", err)
+	}
+	versions := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".sql") {
+			versions = append(versions, entry.Name())
+		}
+	}
+	if len(versions) == 0 {
+		return nil, fmt.Errorf("no embedded migrations")
+	}
+	sort.Strings(versions)
+	return versions, nil
+}
+
+func (store *Store) applyMigration(
+	ctx context.Context,
+	connection *pgxpool.Conn,
+	version string,
+) error {
+	contents, err := migrationFiles.ReadFile("migrations/" + version)
+	if err != nil {
+		return fmt.Errorf("read migration %s: %w", version, err)
+	}
+
+	transaction, err := connection.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin migration %s: %w", version, err)
+	}
+	defer rollback(transaction)
+
+	var applied bool
+	if err := transaction.QueryRow(
+		ctx,
+		`SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE version = $1)`,
+		version,
+	).Scan(&applied); err != nil {
+		return fmt.Errorf("check migration %s: %w", version, err)
+	}
+	if applied {
+		return transaction.Commit(ctx)
+	}
+
+	if _, err := transaction.Exec(ctx, string(contents)); err != nil {
+		return fmt.Errorf("apply migration %s: %w", version, err)
+	}
+	if _, err := transaction.Exec(
+		ctx,
+		`INSERT INTO schema_migrations (version) VALUES ($1)`,
+		version,
+	); err != nil {
+		return fmt.Errorf("record migration %s: %w", version, err)
+	}
+	if err := transaction.Commit(ctx); err != nil {
+		return fmt.Errorf("commit migration %s: %w", version, err)
+	}
+	return nil
+}
+
+func unlockMigration(connection executor) {
+	ctx, cancel := context.WithTimeout(context.Background(), rollbackTimeout)
+	defer cancel()
+	_, _ = connection.Exec(ctx, `SELECT pg_advisory_unlock($1)`, migrationAdvisoryLockID)
+}

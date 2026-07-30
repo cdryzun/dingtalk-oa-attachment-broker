@@ -1,0 +1,963 @@
+openapi: 3.1.0
+info:
+  title: DingTalk OA Attachment Broker API
+  version: 1.0.0
+  license:
+    name: Apache License 2.0
+    identifier: Apache-2.0
+  description: |
+    Authenticates an enterprise DingTalk user, authorizes access to an OA
+    approval instance, and streams approved attachments without exposing
+    DingTalk application credentials or signed download URLs.
+servers:
+  - url: /
+    description: Current self-hosted Broker origin
+tags:
+  - name: Authentication
+    description: DingTalk-backed device authorization.
+  - name: Sessions
+    description: Broker session lifecycle.
+  - name: Approvals
+    description: Authorized OA attachment access.
+  - name: Operations
+    description: Service health and telemetry.
+security: []
+paths:
+  /api/v1/device-authorizations:
+    post:
+      tags:
+        - Authentication
+      operationId: createDeviceAuthorization
+      summary: Start a device authorization
+      responses:
+        "201":
+          description: Device authorization created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceAuthorization"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /auth/dingtalk/start:
+    get:
+      tags:
+        - Authentication
+      operationId: showDingTalkAuthorizationStart
+      summary: Show a user-confirmed DingTalk authorization start
+      parameters:
+        - name: user_code
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: "^[A-Z2-9]{4}-[A-Z2-9]{4}$"
+      responses:
+        "200":
+          description: Confirmation page that submits the authorization start.
+          content:
+            text/html:
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    post:
+      tags:
+        - Authentication
+      operationId: startDingTalkAuthorization
+      summary: Bind a user code and redirect to DingTalk
+      description: |
+        The preceding GET issues exactly one environment-specific confirmation
+        cookie. HTTPS uses the `__Host-` cookie; loopback HTTP uses the
+        unprefixed development cookie. The browser submits the issued cookie.
+      parameters:
+        - name: user_code
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: "^[A-Z2-9]{4}-[A-Z2-9]{4}$"
+        - name: __Host-dingtalk_oa_start_confirmation
+          in: cookie
+          required: false
+          description: Host-bound confirmation cookie used by HTTPS deployments.
+          schema:
+            type: string
+            pattern: "^[a-f0-9]{64}$"
+        - name: dingtalk_oa_start_confirmation
+          in: cookie
+          required: false
+          description: Host-only confirmation cookie used only for loopback HTTP development.
+          schema:
+            type: string
+            pattern: "^[a-f0-9]{64}$"
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - confirmation
+                - user_code_confirmation
+              properties:
+                confirmation:
+                  type: string
+                  pattern: "^[a-f0-9]{64}$"
+                user_code_confirmation:
+                  type: string
+                  description: Device code manually confirmed against the requesting CLI.
+                  pattern: "^[A-Z2-9]{4}-[A-Z2-9]{4}$"
+      responses:
+        "303":
+          description: Redirect to the DingTalk authorization page.
+          headers:
+            Location:
+              required: true
+              schema:
+                type: string
+                format: uri
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "410":
+          $ref: "#/components/responses/Expired"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /auth/dingtalk/callback:
+    get:
+      tags:
+        - Authentication
+      operationId: completeDingTalkAuthorization
+      summary: Complete DingTalk user authorization
+      description: |
+        Browser callback registered in the DingTalk application. A successful
+        callback supplies `code`; a consent denial supplies `error`. Both forms
+        supply `state`. The user access token exists only during this request.
+      parameters:
+        - name: state
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: code
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: error
+          in: query
+          required: false
+          description: OAuth error returned when the user denies consent.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Authorization completed.
+          content:
+            text/html:
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "410":
+          $ref: "#/components/responses/Expired"
+        "502":
+          $ref: "#/components/responses/UpstreamError"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/device-authorizations/token:
+    post:
+      tags:
+        - Authentication
+      operationId: exchangeDeviceAuthorization
+      summary: Exchange an approved device code for a broker session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - deviceCode
+              properties:
+                deviceCode:
+                  type: string
+      responses:
+        "200":
+          description: Session created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "410":
+          $ref: "#/components/responses/Expired"
+        "428":
+          description: User authorization is still pending.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/sessions/refresh:
+    post:
+      tags:
+        - Sessions
+      operationId: refreshSession
+      summary: Rotate a broker session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - refreshToken
+              properties:
+                refreshToken:
+                  type: string
+      responses:
+        "200":
+          description: Session rotated. The previous session is revoked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/sessions/current:
+    delete:
+      tags:
+        - Sessions
+      operationId: revokeCurrentSession
+      summary: Revoke the current broker session
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Session revoked.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/me:
+    get:
+      tags:
+        - Sessions
+      operationId: getCurrentUser
+      summary: Return the verified enterprise identity
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Verified broker user.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/approval-categories:
+    get:
+      tags:
+        - Approvals
+      operationId: listApprovalCategories
+      deprecated: true
+      summary: List approval templates visible to the current user
+      description: |
+        Compatibility alias for /api/v1/me/approval-categories. The catalog is
+        derived from DingTalk for the authenticated enterprise user. Template
+        process codes never leave the broker.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: q
+          in: query
+          required: false
+          description: Case-insensitive template name or DingTalk directory name filter.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+        - name: cursor
+          in: query
+          required: false
+          description: Signed opaque cursor bound to the authenticated enterprise user.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 16384
+      responses:
+        "200":
+          description: Approval search categories.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: "#/components/schemas/ApprovalCategoryDiscoveryResult"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "502":
+          $ref: "#/components/responses/UpstreamError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/me/approval-categories:
+    get:
+      tags:
+        - Approvals
+      operationId: listCurrentUserApprovalCategories
+      summary: List approval templates visible to the current user
+      description: |
+        Reads the DingTalk approval-form catalog for the authenticated
+        enterprise user. Every visible template becomes one opaque, user-bound
+        category. Follow nextCursor to continue until complete is true. When a
+        cursor is supplied, q must be omitted. Listing a category does not
+        imply that the template currently has an approval with an attachment.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: q
+          in: query
+          required: false
+          description: Case-insensitive template name or DingTalk directory name filter.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+        - name: cursor
+          in: query
+          required: false
+          description: Signed opaque cursor bound to the authenticated enterprise user.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 16384
+      responses:
+        "200":
+          description: Current user's visible template categories and continuation state.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: "#/components/schemas/ApprovalCategoryDiscoveryResult"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "502":
+          $ref: "#/components/responses/UpstreamError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/approvals:
+    get:
+      tags:
+        - Approvals
+      operationId: searchApprovals
+      summary: Search authorized approvals with attachments by category
+      description: |
+        Queries only process codes configured for the selected category, then
+        re-fetches every candidate and applies participant authorization.
+        Results exclude approvals without attachments. The default time window
+        is the preceding 120 days. DingTalk limits each request window to 120
+        days and does not permit a start time more than 365 days in the past.
+        When cursor is supplied, createdAfter and createdBefore must be omitted.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: category
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: "^[a-z][a-z0-9-]{0,62}$"
+        - name: q
+          in: query
+          required: false
+          description: |
+            Case-insensitive title, businessId, or form-value keyword matched
+            only after participant authorization. Omit when cursor is supplied.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+        - name: createdAfter
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: createdBefore
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: cursor
+          in: query
+          required: false
+          description: Signed opaque cursor returned by the previous page.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 16384
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 10
+            maximum: 20
+            default: 20
+      responses:
+        "200":
+          description: Authorized approval summaries and attachment metadata.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: "#/components/schemas/ApprovalSearchResult"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "502":
+          $ref: "#/components/responses/UpstreamError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/approvals/{processInstanceId}/attachments:
+    get:
+      tags:
+        - Approvals
+      operationId: listApprovalAttachments
+      summary: List attachments belonging to an approval instance
+      description: |
+        Accepts only a DingTalk processInstanceId. A visible OA approval number
+        or businessId is not accepted. A template processCode beginning with
+        PROC- is rejected before any DingTalk request is made.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ProcessInstanceId"
+      responses:
+        "200":
+          description: Authorized attachment metadata.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  - data
+                properties:
+                  data:
+                    type: object
+                    additionalProperties: false
+                    required:
+                      - processInstanceId
+                      - attachments
+                    properties:
+                      processInstanceId:
+                        type: string
+                      attachments:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Attachment"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "502":
+          $ref: "#/components/responses/UpstreamError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /api/v1/approvals/{processInstanceId}/attachments/{fileId}/content:
+    get:
+      tags:
+        - Approvals
+      operationId: downloadApprovalAttachment
+      summary: Stream an authorized approval attachment
+      description: |
+        Re-fetches the approval and verifies file membership before requesting
+        a temporary DingTalk download URL. The temporary URL is consumed by the
+        broker and is never included in the response. A template processCode
+        beginning with PROC- is rejected before any DingTalk request is made.
+        If an upstream stream fails after response headers, the broker aborts the
+        HTTP transfer. Clients must treat an incomplete transfer as failed and
+        must not publish partial output.
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ProcessInstanceId"
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 512
+      responses:
+        "200":
+          description: Attachment content.
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+            Content-Length:
+              schema:
+                type: integer
+                format: int64
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "413":
+          description: Attachment exceeds the configured size limit.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "502":
+          $ref: "#/components/responses/UpstreamError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /healthz:
+    get:
+      tags:
+        - Operations
+      operationId: getLiveness
+      summary: Check process liveness
+      responses:
+        "200":
+          description: Process is alive.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+  /readyz:
+    get:
+      tags:
+        - Operations
+      operationId: getReadiness
+      summary: Check PostgreSQL connection and schema readiness
+      responses:
+        "200":
+          description: Service is ready.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+  parameters:
+    ProcessInstanceId:
+      name: processInstanceId
+      in: path
+      required: true
+      description: |
+        DingTalk process instance identifier, not businessId and not a template
+        processCode. Values beginning with PROC- are invalid.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 512
+  schemas:
+    Health:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          const: ok
+    DeviceAuthorization:
+      type: object
+      additionalProperties: false
+      required:
+        - deviceCode
+        - userCode
+        - verificationUri
+        - verificationUriComplete
+        - expiresIn
+        - interval
+      properties:
+        deviceCode:
+          type: string
+        userCode:
+          type: string
+        verificationUri:
+          type: string
+          format: uri
+        verificationUriComplete:
+          type: string
+          format: uri
+        expiresIn:
+          type: integer
+          format: int64
+          example: 600
+        interval:
+          type: integer
+          format: int64
+          example: 5
+    Session:
+      type: object
+      additionalProperties: false
+      required:
+        - accessToken
+        - tokenType
+        - expiresIn
+        - refreshToken
+        - refreshExpiresIn
+      properties:
+        accessToken:
+          type: string
+        tokenType:
+          type: string
+          const: Bearer
+        expiresIn:
+          type: integer
+          format: int64
+          example: 28800
+        refreshToken:
+          type: string
+        refreshExpiresIn:
+          type: integer
+          format: int64
+          example: 2592000
+    User:
+      type: object
+      additionalProperties: false
+      required:
+        - corpId
+        - userId
+        - unionId
+        - displayName
+      properties:
+        corpId:
+          type: string
+        userId:
+          type: string
+        unionId:
+          type: string
+        displayName:
+          type: string
+    ApprovalCategory:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - displayName
+      properties:
+        id:
+          type: string
+          pattern: "^[a-z][a-z0-9-]{0,62}$"
+        displayName:
+          type: string
+        directoryName:
+          type: string
+          description: DingTalk directory containing the visible approval template.
+        description:
+          type: string
+    ApprovalCategoryDiscoveryResult:
+      type: object
+      additionalProperties: false
+      required:
+        - categories
+        - complete
+        - scannedPages
+        - scannedCandidates
+        - totalCategories
+      properties:
+        categories:
+          type: array
+          items:
+            $ref: "#/components/schemas/ApprovalCategory"
+        nextCursor:
+          type: string
+          minLength: 1
+          maxLength: 16384
+        complete:
+          type: boolean
+        scannedPages:
+          type: integer
+          minimum: 0
+          maximum: 1
+        scannedCandidates:
+          type: integer
+          minimum: 0
+          maximum: 100
+        totalCategories:
+          type: integer
+          minimum: 0
+          maximum: 5000
+    ApprovalSearchResult:
+      type: object
+      additionalProperties: false
+      required:
+        - categoryId
+        - items
+      properties:
+        categoryId:
+          type: string
+          pattern: "^[a-z][a-z0-9-]{0,62}$"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ApprovalSearchItem"
+        nextCursor:
+          type: string
+          minLength: 1
+          maxLength: 16384
+    ApprovalSearchItem:
+      type: object
+      additionalProperties: false
+      required:
+        - processInstanceId
+        - title
+        - attachments
+      properties:
+        processInstanceId:
+          type: string
+        businessId:
+          type: string
+        title:
+          type: string
+        status:
+          type: string
+        result:
+          type: string
+        createTime:
+          type: string
+          format: date-time
+        finishTime:
+          type: string
+          format: date-time
+        attachments:
+          type: array
+          items:
+            $ref: "#/components/schemas/Attachment"
+    Attachment:
+      type: object
+      additionalProperties: false
+      required:
+        - fileId
+        - fileName
+        - source
+      properties:
+        fileId:
+          type: string
+        fileName:
+          type: string
+        fileSize:
+          type: integer
+          format: int64
+          minimum: 0
+        fileType:
+          type: string
+        source:
+          type: string
+          enum:
+            - form
+            - comment
+    Problem:
+      type: object
+      additionalProperties: false
+      required:
+        - type
+        - title
+        - status
+        - detail
+        - instance
+        - code
+        - requestId
+      properties:
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+        code:
+          type: string
+        requestId:
+          type: string
+  responses:
+    InvalidRequest:
+      description: Request validation failed.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Unauthorized:
+      description: Bearer authentication failed.
+      headers:
+        WWW-Authenticate:
+          schema:
+            type: string
+            const: Bearer
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Forbidden:
+      description: Authenticated user is not authorized.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    NotFound:
+      description: Resource was not found or file membership was not confirmed.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Conflict:
+      description: One-time credential was already used.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Expired:
+      description: Device authorization expired.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    RateLimited:
+      description: Request or download concurrency limit exceeded.
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 60
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    UpstreamError:
+      description: DingTalk or attachment upstream failed.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    ServiceUnavailable:
+      description: PostgreSQL or an upstream dependency is unavailable.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
