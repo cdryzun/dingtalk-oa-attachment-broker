@@ -543,6 +543,10 @@ func TestGetSessionDatabaseFailureIsUnavailable(t *testing.T) {
 	if !errors.Is(err, domain.ErrUnavailable) || !errors.Is(err, context.Canceled) {
 		t.Fatalf("ExchangeDeviceAuthorization() error = %v; want unavailable and canceled", err)
 	}
+	_, err = store.ClaimOAuthState(ctx, []byte("oauth-state"), time.Now())
+	if !errors.Is(err, domain.ErrUnavailable) || !errors.Is(err, context.Canceled) {
+		t.Fatalf("ClaimOAuthState() error = %v; want unavailable and canceled", err)
+	}
 }
 
 type rollbackRecorder struct {

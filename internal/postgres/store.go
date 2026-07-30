@@ -179,7 +179,7 @@ func (store *Store) ClaimOAuthState(
 ) ([]byte, error) {
 	transaction, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("begin OAuth state claim transaction: %w", err)
+		return nil, fmt.Errorf("%w: begin OAuth state claim transaction: %w", domain.ErrUnavailable, err)
 	}
 	defer rollback(transaction)
 
@@ -198,7 +198,7 @@ func (store *Store) ClaimOAuthState(
 		return nil, domain.ErrUnauthorized
 	}
 	if err != nil {
-		return nil, fmt.Errorf("load device authorization by OAuth state: %w", err)
+		return nil, fmt.Errorf("%w: load device authorization by OAuth state: %w", domain.ErrUnavailable, err)
 	}
 	if !expiresAt.After(now) {
 		return nil, domain.ErrExpired
@@ -214,10 +214,10 @@ func (store *Store) ClaimOAuthState(
 		 WHERE device_code_hash = $1`,
 		deviceCodeHash,
 	); err != nil {
-		return nil, fmt.Errorf("claim OAuth state: %w", err)
+		return nil, fmt.Errorf("%w: claim OAuth state: %w", domain.ErrUnavailable, err)
 	}
 	if err := transaction.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("commit OAuth state claim transaction: %w", err)
+		return nil, fmt.Errorf("%w: commit OAuth state claim transaction: %w", domain.ErrUnavailable, err)
 	}
 	return append([]byte(nil), deviceCodeHash...), nil
 }
