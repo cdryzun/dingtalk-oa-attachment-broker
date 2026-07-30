@@ -421,9 +421,36 @@ func (store *Store) ExchangeDeviceAuthorization(
 		return domain.User{}, fmt.Errorf("%w: consume device authorization: %w", domain.ErrUnavailable, err)
 	}
 	if err := transaction.Commit(ctx); err != nil {
-		return domain.User{}, fmt.Errorf("%w: commit device exchange transaction: %w", domain.ErrUnavailable, err)
+		return confirmDeviceExchangeCommit(
+			ctx,
+			session.AccessTokenHash,
+			now,
+			err,
+			store.GetSessionByAccessToken,
+		)
 	}
 	return user, nil
+}
+
+func confirmDeviceExchangeCommit(
+	ctx context.Context,
+	accessTokenHash []byte,
+	now time.Time,
+	commitErr error,
+	lookup func(context.Context, []byte, time.Time) (domain.User, error),
+) (domain.User, error) {
+	confirmationContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), rollbackTimeout)
+	defer cancel()
+	user, err := lookup(confirmationContext, accessTokenHash, now)
+	if err == nil {
+		return user, nil
+	}
+	return domain.User{}, fmt.Errorf(
+		"%w: commit device exchange transaction: %v; confirmation failed: %v",
+		domain.ErrUnavailable,
+		commitErr,
+		err,
+	)
 }
 
 func (store *Store) GetSessionByAccessToken(

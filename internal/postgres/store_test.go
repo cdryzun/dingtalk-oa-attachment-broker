@@ -572,6 +572,49 @@ func TestGetSessionDatabaseFailureIsUnavailable(t *testing.T) {
 	}
 }
 
+func TestConfirmDeviceExchangeCommit(t *testing.T) {
+	parentContext, cancelParent := context.WithCancel(context.Background())
+	cancelParent()
+	now := time.Now()
+	wantUser := domain.User{CorpID: "corp", UserID: "user"}
+	user, err := confirmDeviceExchangeCommit(
+		parentContext,
+		[]byte("access-hash"),
+		now,
+		errors.New("commit acknowledgement lost"),
+		func(ctx context.Context, accessTokenHash []byte, lookupNow time.Time) (domain.User, error) {
+			if ctx.Err() != nil {
+				t.Fatalf("confirmation context error = %v; want detached context", ctx.Err())
+			}
+			deadline, bounded := ctx.Deadline()
+			remaining := time.Until(deadline)
+			if !bounded || remaining <= 0 || remaining > rollbackTimeout {
+				t.Fatalf("confirmation deadline = %v; want within %v", deadline, rollbackTimeout)
+			}
+			if string(accessTokenHash) != "access-hash" || !lookupNow.Equal(now) {
+				t.Fatalf("confirmation lookup = %q, %v", accessTokenHash, lookupNow)
+			}
+			return wantUser, nil
+		},
+	)
+	if err != nil || user != wantUser {
+		t.Fatalf("confirmDeviceExchangeCommit() = %#v, %v; want committed user", user, err)
+	}
+
+	_, err = confirmDeviceExchangeCommit(
+		context.Background(),
+		[]byte("missing-hash"),
+		now,
+		errors.New("commit failed"),
+		func(context.Context, []byte, time.Time) (domain.User, error) {
+			return domain.User{}, domain.ErrUnauthorized
+		},
+	)
+	if !errors.Is(err, domain.ErrUnavailable) || errors.Is(err, domain.ErrUnauthorized) {
+		t.Fatalf("unconfirmed commit error = %v; want only unavailable", err)
+	}
+}
+
 type rollbackRecorder struct {
 	called   bool
 	deadline time.Time
