@@ -144,6 +144,10 @@ func NewService(options Options) (*Service, error) {
 		options.RefreshTokenTTL < time.Second || options.PollInterval < time.Second {
 		return nil, fmt.Errorf("authorization durations must be at least one second")
 	}
+	if options.DeviceCodeTTL%time.Second != 0 || options.AccessTokenTTL%time.Second != 0 ||
+		options.RefreshTokenTTL%time.Second != 0 || options.PollInterval%time.Second != 0 {
+		return nil, fmt.Errorf("authorization durations must use whole seconds")
+	}
 	if options.PollInterval >= options.DeviceCodeTTL {
 		return nil, fmt.Errorf("poll interval must be less than device code lifetime")
 	}
