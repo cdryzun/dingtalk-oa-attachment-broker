@@ -51,6 +51,28 @@ Direct list and download commands reject visible approval numbers and require
 an explicit `processInstanceId`. Search accepts only a category ID returned by
 the broker. It never accepts a client-supplied DingTalk `processCode`.
 
+## Verified WorkBuddy example
+
+The following images come from an end-to-end WorkBuddy invocation of the
+bundled Skill. Enterprise identities, approval names, file names, paths, and
+hash values are removed from the public images.
+
+WorkBuddy first confirms the Broker login and queries approval categories that
+are visible to the authenticated user:
+
+![WorkBuddy Broker login and category query](images/workbuddy-skill-query.png)
+
+The example category query returned no matching approvals with attachments. A
+subsequent request using a known `processInstanceId` downloaded one attachment:
+
+![WorkBuddy authorized attachment download](images/workbuddy-attachment-download.png)
+
+This direct lookup does not bypass authorization. The Broker fetches the fresh
+approval, verifies that the user is a participant, confirms that the requested
+`fileId` belongs to that approval, and only then streams the attachment. The
+Skill reports the destination, byte count, and SHA-256 after the atomic download
+completes.
+
 ## Credential storage
 
 The client stores one broker-scoped, versioned session document in
