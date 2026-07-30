@@ -363,7 +363,7 @@ func (store *Store) ExchangeDeviceAuthorization(
 ) (domain.User, error) {
 	transaction, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		return domain.User{}, fmt.Errorf("begin device exchange transaction: %w", err)
+		return domain.User{}, fmt.Errorf("%w: begin device exchange transaction: %w", domain.ErrUnavailable, err)
 	}
 	defer rollback(transaction)
 
@@ -383,7 +383,7 @@ func (store *Store) ExchangeDeviceAuthorization(
 		return domain.User{}, domain.ErrUnauthorized
 	}
 	if err != nil {
-		return domain.User{}, fmt.Errorf("load device authorization by device code: %w", err)
+		return domain.User{}, fmt.Errorf("%w: load device authorization by device code: %w", domain.ErrUnavailable, err)
 	}
 	if !expiresAt.After(now) {
 		return domain.User{}, domain.ErrExpired
@@ -418,10 +418,10 @@ func (store *Store) ExchangeDeviceAuthorization(
 		now,
 		deviceCodeHash,
 	); err != nil {
-		return domain.User{}, fmt.Errorf("consume device authorization: %w", err)
+		return domain.User{}, fmt.Errorf("%w: consume device authorization: %w", domain.ErrUnavailable, err)
 	}
 	if err := transaction.Commit(ctx); err != nil {
-		return domain.User{}, fmt.Errorf("commit device exchange transaction: %w", err)
+		return domain.User{}, fmt.Errorf("%w: commit device exchange transaction: %w", domain.ErrUnavailable, err)
 	}
 	return user, nil
 }
@@ -647,7 +647,7 @@ func loadUser(
 		return domain.User{}, fmt.Errorf("%w: session user does not exist", domain.ErrConflict)
 	}
 	if err != nil {
-		return domain.User{}, fmt.Errorf("load user: %w", err)
+		return domain.User{}, fmt.Errorf("%w: load user: %w", domain.ErrUnavailable, err)
 	}
 	return user, nil
 }

@@ -534,6 +534,15 @@ func TestGetSessionDatabaseFailureIsUnavailable(t *testing.T) {
 	if !errors.Is(err, domain.ErrUnavailable) || !errors.Is(err, context.Canceled) {
 		t.Fatalf("RotateSession() error = %v; want unavailable and canceled", err)
 	}
+	_, err = store.ExchangeDeviceAuthorization(
+		ctx,
+		[]byte("device-code"),
+		testSessionSeed(time.Now(), "device-exchange"),
+		time.Now(),
+	)
+	if !errors.Is(err, domain.ErrUnavailable) || !errors.Is(err, context.Canceled) {
+		t.Fatalf("ExchangeDeviceAuthorization() error = %v; want unavailable and canceled", err)
+	}
 }
 
 type rollbackRecorder struct {
