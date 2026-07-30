@@ -662,6 +662,12 @@ def command_login(
             if error.status == 428:
                 time.sleep(min(interval, max(0.0, deadline - time.monotonic())))
                 continue
+            if error.status == 429 and error.retry_after_seconds is not None:
+                retry_delay = error.retry_after_seconds
+                remaining = deadline - time.monotonic()
+                if 0 < retry_delay <= remaining:
+                    time.sleep(retry_delay)
+                    continue
             raise
         access_token, refresh_token = _session_tokens(session)
         client.store.save(access_token, refresh_token)

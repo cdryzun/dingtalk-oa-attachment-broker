@@ -719,6 +719,61 @@ def test_login_poll_uses_remaining_login_deadline() -> None:
     assert 0 < observed_timeouts[0] <= 10
 
 
+def test_login_poll_honors_rate_limit_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sleeps: list[float] = []
+
+    class RateLimitedLoginClient:
+        broker_url = "https://broker.example.test"
+        timeout = 300.0
+
+        def __init__(self) -> None:
+            self.store = MemoryStore()
+            self.polls = 0
+
+        @staticmethod
+        def create_device_authorization() -> dict[str, Any]:
+            return {
+                "deviceCode": "device-code",
+                "userCode": "ABCD-EFGH",
+                "verificationUriComplete": (
+                    "https://broker.example.test/auth/dingtalk/start"
+                    "?user_code=ABCD-EFGH"
+                ),
+                "expiresIn": 600,
+                "interval": 5,
+            }
+
+        def exchange_device_code(
+            self,
+            _device_code: str,
+            *,
+            timeout: float,
+        ) -> dict[str, Any]:
+            del timeout
+            self.polls += 1
+            if self.polls == 1:
+                raise CLIENT.ClientError(
+                    "rate_limited",
+                    "retry",
+                    status=429,
+                    retry_after_seconds=2,
+                )
+            return {
+                "accessToken": "access-token",
+                "refreshToken": "refresh-token",
+            }
+
+    monkeypatch.setattr(CLIENT.time, "sleep", sleeps.append)
+    client = RateLimitedLoginClient()
+    CLIENT.command_login(client, open_browser=False, timeout_seconds=10)
+
+    assert client.polls == 2
+    assert sleeps == [2]
+    assert client.store.saved == [("access-token", "refresh-token")]
+
+
 def test_auth_status_validates_identity_without_disclosing_tokens(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
