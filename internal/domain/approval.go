@@ -145,8 +145,10 @@ func walkAttachmentJSON(value any, result *[]Attachment) {
 		if attachment, ok := attachmentFromMap(typed); ok {
 			*result = append(*result, attachment)
 		}
-		for _, nested := range typed {
-			walkAttachmentJSON(nested, result)
+		for _, key := range []string{"files", "attachments"} {
+			if nested, exists := typed[key]; exists {
+				walkAttachmentJSON(nested, result)
+			}
 		}
 	}
 }
