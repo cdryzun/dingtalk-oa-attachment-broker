@@ -735,8 +735,15 @@ def test_login_poll_uses_remaining_login_deadline() -> None:
     assert 0 < observed_timeouts[0] <= 10
 
 
-def test_login_poll_honors_rate_limit_retry(
+@pytest.mark.parametrize(
+    ("status", "retry_after_seconds", "expected_delay"),
+    [(429, 2, 2), (503, None, 5)],
+)
+def test_login_poll_retries_transient_failures(
     monkeypatch: pytest.MonkeyPatch,
+    status: int,
+    retry_after_seconds: Optional[int],
+    expected_delay: int,
 ) -> None:
     sleeps: list[float] = []
 
@@ -771,10 +778,10 @@ def test_login_poll_honors_rate_limit_retry(
             self.polls += 1
             if self.polls == 1:
                 raise CLIENT.ClientError(
-                    "rate_limited",
+                    "transient_error",
                     "retry",
-                    status=429,
-                    retry_after_seconds=2,
+                    status=status,
+                    retry_after_seconds=retry_after_seconds,
                 )
             return {
                 "accessToken": "access-token",
@@ -786,7 +793,7 @@ def test_login_poll_honors_rate_limit_retry(
     CLIENT.command_login(client, open_browser=False, timeout_seconds=10)
 
     assert client.polls == 2
-    assert sleeps == [2]
+    assert sleeps == [expected_delay]
     assert client.store.saved == [("access-token", "refresh-token")]
 
 

@@ -675,6 +675,11 @@ def command_login(
                 if 0 < retry_delay <= remaining:
                     time.sleep(retry_delay)
                     continue
+            if error.status == 503:
+                remaining = deadline - time.monotonic()
+                if interval <= remaining:
+                    time.sleep(interval)
+                    continue
             raise
         access_token, refresh_token = _session_tokens(session)
         client.store.save(access_token, refresh_token)
