@@ -173,6 +173,11 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	if authPollInterval >= deviceCodeTTL {
+		return Config{}, fmt.Errorf(
+			"validate AUTH_POLL_INTERVAL: must be less than DEVICE_CODE_TTL",
+		)
+	}
 	upstreamTimeout, err := positiveDuration("UPSTREAM_TIMEOUT", defaultUpstreamTimeout)
 	if err != nil {
 		return Config{}, err

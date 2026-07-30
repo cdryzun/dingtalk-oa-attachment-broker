@@ -135,7 +135,7 @@ Optional values:
 | `DEVICE_CODE_TTL` | `10m` | Device and OAuth state lifetime; min `1s` |
 | `ACCESS_TOKEN_TTL` | `8h` | Broker access token lifetime; min `1s` |
 | `REFRESH_TOKEN_TTL` | `720h` | Broker refresh lifetime; min `1s` |
-| `AUTH_POLL_INTERVAL` | `5s` | Client polling interval; min `1s` |
+| `AUTH_POLL_INTERVAL` | `5s` | Client poll; min `1s`, less than device TTL |
 | `UPSTREAM_TIMEOUT` | `30s` | DingTalk API deadline; min `1ms` |
 | `DOWNLOAD_TIMEOUT` | `10m` | End-to-end attachment deadline |
 | `DOWNLOAD_MAX_BYTES` | `209715200` | Maximum streamed attachment bytes |

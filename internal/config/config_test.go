@@ -154,6 +154,7 @@ func TestLoadRejectsInvalidConfiguration(t *testing.T) {
 		{name: "invalid read timeout", key: "HTTP_READ_TIMEOUT", value: "later", wantError: "HTTP_READ_TIMEOUT"},
 		{name: "non-positive duration", key: "HTTP_IDLE_TIMEOUT", value: "0s", wantError: "HTTP_IDLE_TIMEOUT"},
 		{name: "invalid auth retention", key: "AUTH_RECORD_RETENTION", value: "0s", wantError: "AUTH_RECORD_RETENTION"},
+		{name: "poll interval reaches device lifetime", key: "AUTH_POLL_INTERVAL", value: "10m", wantError: "AUTH_POLL_INTERVAL"},
 		{name: "invalid max bytes", key: "DOWNLOAD_MAX_BYTES", value: "0", wantError: "DOWNLOAD_MAX_BYTES"},
 		{name: "invalid concurrency", key: "DOWNLOAD_CONCURRENCY_PER_USER", value: "-1", wantError: "DOWNLOAD_CONCURRENCY_PER_USER"},
 		{name: "invalid request rate", key: "REQUESTS_PER_MINUTE", value: "0", wantError: "REQUESTS_PER_MINUTE"},
