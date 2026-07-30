@@ -619,7 +619,13 @@ def select_credential_store(
     """Use a local JSON credential cache scoped to the current user."""
     path = DEFAULT_CREDENTIAL_FILE
     if credential_file is not None:
-        path = Path(credential_file).expanduser()
+        try:
+            path = Path(credential_file).expanduser()
+        except RuntimeError:
+            raise ClientError(
+                "invalid_credential_file",
+                "The credential file home directory could not be resolved.",
+            ) from None
         if not path.is_absolute():
             raise ClientError(
                 "invalid_credential_file",

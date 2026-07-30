@@ -454,6 +454,23 @@ def test_validate_broker_url_rejects_unsafe_values(value: str) -> None:
         CLIENT.validate_broker_url(value)
 
 
+def test_select_credential_store_converts_home_expansion_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_expanduser(_path: Path) -> Path:
+        raise RuntimeError("home unavailable")
+
+    monkeypatch.setattr(Path, "expanduser", fail_expanduser)
+
+    with pytest.raises(CLIENT.ClientError) as captured:
+        CLIENT.select_credential_store(
+            "https://broker.example.test",
+            Path("~missing-user/auth.json"),
+        )
+
+    assert captured.value.code == "invalid_credential_file"
+
+
 def test_list_rotates_session_once_and_persists_tokens() -> None:
     with fixture_server() as (origin, state):
         store = MemoryStore("access-old-secret", "refresh-old-secret")
