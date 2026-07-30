@@ -49,6 +49,28 @@ func TestServiceCreatesDeviceAuthorizationWithoutPersistingRawCode(t *testing.T)
 	}
 }
 
+func TestServiceRetriesGeneratedDeviceAuthorizationCollisions(t *testing.T) {
+	repository := &recordingRepository{
+		createErrors: []error{domain.ErrConflict, nil},
+	}
+	service := newTestService(repository, &identityProviderStub{})
+	service.generator = &tokenGeneratorStub{
+		tokens:    []string{"colliding-device", "unique-device"},
+		userCodes: []string{"AAAA-AAAA", "BBBB-BBBB"},
+	}
+
+	result, err := service.CreateDeviceAuthorization(context.Background())
+	if err != nil {
+		t.Fatalf("CreateDeviceAuthorization() error = %v", err)
+	}
+	if result.DeviceCode != "unique-device" || result.UserCode != "BBBB-BBBB" {
+		t.Fatalf("CreateDeviceAuthorization() = %#v; want second generated pair", result)
+	}
+	if len(repository.createdDevices) != 2 {
+		t.Fatalf("create attempts = %d; want 2", len(repository.createdDevices))
+	}
+}
+
 func TestServiceStartsDingTalkAuthorizationWithSingleUseState(t *testing.T) {
 	repository := &recordingRepository{}
 	service := newTestService(repository, &identityProviderStub{})
@@ -691,6 +713,8 @@ func validServiceOptions(t *testing.T) Options {
 type recordingRepository struct {
 	createdDevice          DeviceAuthorization
 	createErr              error
+	createdDevices         []DeviceAuthorization
+	createErrors           []error
 	boundUserCode          string
 	boundStateHash         []byte
 	bindErr                error
@@ -730,6 +754,12 @@ func (repository *recordingRepository) CreateDeviceAuthorization(
 	authorization DeviceAuthorization,
 ) error {
 	repository.createdDevice = authorization
+	repository.createdDevices = append(repository.createdDevices, authorization)
+	if len(repository.createErrors) > 0 {
+		err := repository.createErrors[0]
+		repository.createErrors = repository.createErrors[1:]
+		return err
+	}
 	return repository.createErr
 }
 

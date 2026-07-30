@@ -18,9 +18,10 @@ import (
 )
 
 const (
-	userCodeAlphabet                 = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-	authorizationRejectionTimeout    = 5 * time.Second
-	authorizationRejectionRetryDelay = 100 * time.Millisecond
+	userCodeAlphabet                  = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+	authorizationRejectionTimeout     = 5 * time.Second
+	authorizationRejectionRetryDelay  = 100 * time.Millisecond
+	deviceAuthorizationCreateAttempts = 5
 )
 
 type DeviceAuthorization struct {
@@ -176,26 +177,35 @@ func NewService(options Options) (*Service, error) {
 func (service *Service) CreateDeviceAuthorization(
 	ctx context.Context,
 ) (DeviceAuthorizationResponse, error) {
-	deviceCode, err := service.generator.Token()
-	if err != nil {
-		return DeviceAuthorizationResponse{}, fmt.Errorf("generate device code: %w", err)
-	}
-	userCode, err := service.generator.UserCode()
-	if err != nil {
-		return DeviceAuthorizationResponse{}, fmt.Errorf("generate user code: %w", err)
-	}
-	deviceCodeHash, err := service.hasher.Hash(deviceCode)
-	if err != nil {
-		return DeviceAuthorizationResponse{}, fmt.Errorf("hash device code: %w", err)
-	}
-	now := service.now()
-	if err := service.repository.CreateDeviceAuthorization(ctx, DeviceAuthorization{
-		DeviceCodeHash: deviceCodeHash,
-		UserCode:       userCode,
-		CreatedAt:      now,
-		ExpiresAt:      now.Add(service.deviceCodeTTL),
-	}); err != nil {
-		return DeviceAuthorizationResponse{}, fmt.Errorf("persist device authorization: %w", err)
+	var deviceCode string
+	var userCode string
+	for attempt := range deviceAuthorizationCreateAttempts {
+		var err error
+		deviceCode, err = service.generator.Token()
+		if err != nil {
+			return DeviceAuthorizationResponse{}, fmt.Errorf("generate device code: %w", err)
+		}
+		userCode, err = service.generator.UserCode()
+		if err != nil {
+			return DeviceAuthorizationResponse{}, fmt.Errorf("generate user code: %w", err)
+		}
+		deviceCodeHash, err := service.hasher.Hash(deviceCode)
+		if err != nil {
+			return DeviceAuthorizationResponse{}, fmt.Errorf("hash device code: %w", err)
+		}
+		now := service.now()
+		err = service.repository.CreateDeviceAuthorization(ctx, DeviceAuthorization{
+			DeviceCodeHash: deviceCodeHash,
+			UserCode:       userCode,
+			CreatedAt:      now,
+			ExpiresAt:      now.Add(service.deviceCodeTTL),
+		})
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, domain.ErrConflict) || attempt == deviceAuthorizationCreateAttempts-1 {
+			return DeviceAuthorizationResponse{}, fmt.Errorf("persist device authorization: %w", err)
+		}
 	}
 
 	verificationURI := service.resolvePublicPath("/auth/dingtalk/start")
