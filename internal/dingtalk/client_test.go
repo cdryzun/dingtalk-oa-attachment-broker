@@ -155,6 +155,12 @@ func TestAppTokenCacheRefreshesBeforeExpirationAndSharesFailure(t *testing.T) {
 	if token, err := cache.Token(context.Background()); err != nil || token != "first-token" {
 		t.Fatalf("refresh fallback Token() = %q, %v; want first-token", token, err)
 	}
+	if token, err := cache.Token(context.Background()); err != nil || token != "first-token" {
+		t.Fatalf("backoff Token() = %q, %v; want first-token", token, err)
+	}
+	if calls.Load() != 2 {
+		t.Fatalf("app token fetches during backoff = %d; want 2", calls.Load())
+	}
 	now = now.Add(5 * time.Minute)
 	if _, err := cache.Token(context.Background()); !errors.Is(err, expected) {
 		t.Fatalf("expired refresh Token() error = %v; want expected failure", err)
