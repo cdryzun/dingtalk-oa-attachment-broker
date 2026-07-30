@@ -971,7 +971,13 @@ def command_download(
     *,
     overwrite: bool,
 ) -> None:
-    destination = output.expanduser().absolute()
+    try:
+        destination = output.expanduser().absolute()
+    except RuntimeError:
+        raise ClientError(
+            "invalid_output",
+            "The output path home directory could not be resolved.",
+        ) from None
     parent = destination.parent
     if not parent.is_dir():
         raise ClientError(

@@ -1227,6 +1227,30 @@ def test_download_refuses_overwrite_without_contacting_broker(
     assert destination.read_bytes() == b"preserve-me"
 
 
+def test_download_converts_output_home_expansion_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_expanduser(_path: Path) -> Path:
+        raise RuntimeError("home unavailable")
+
+    monkeypatch.setattr(Path, "expanduser", fail_expanduser)
+    client = CLIENT.BrokerClient(
+        "https://broker.example.test",
+        MemoryStore("access", "refresh"),
+    )
+
+    with pytest.raises(CLIENT.ClientError) as captured:
+        CLIENT.command_download(
+            client,
+            "process",
+            "file",
+            Path("~missing-user/attachment.bin"),
+            overwrite=False,
+        )
+
+    assert captured.value.code == "invalid_output"
+
+
 def test_download_uses_windows_atomic_no_clobber_rename(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
