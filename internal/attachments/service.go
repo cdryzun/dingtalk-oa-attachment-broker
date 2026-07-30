@@ -200,6 +200,25 @@ func (service *Service) Download(
 			err,
 		)
 	}
+	if attachment.FileSize > 0 {
+		if download.ContentLength >= 0 && download.ContentLength != attachment.FileSize {
+			_ = download.Body.Close()
+			return nil, service.deny(
+				ctx,
+				user,
+				"attachments.download",
+				processInstanceID,
+				fileID,
+				requestID,
+				fmt.Errorf("%w: attachment size differs from approval metadata", domain.ErrUpstream),
+			)
+		}
+		download.Body = &expectedSizeReadCloser{
+			body:      download.Body,
+			remaining: attachment.FileSize,
+		}
+		download.ContentLength = attachment.FileSize
+	}
 	attachment.FileName = SanitizeFilename(attachment.FileName)
 	download.Attachment = attachment
 	if err := service.allow(
@@ -366,6 +385,38 @@ func (limiter *downloadLimiter) acquire(userID string) (func(), bool) {
 			}
 		})
 	}, true
+}
+
+type expectedSizeReadCloser struct {
+	body      io.ReadCloser
+	remaining int64
+}
+
+func (reader *expectedSizeReadCloser) Read(buffer []byte) (int, error) {
+	if len(buffer) == 0 {
+		return 0, nil
+	}
+	if reader.remaining > 0 {
+		if int64(len(buffer)) > reader.remaining {
+			buffer = buffer[:reader.remaining]
+		}
+		count, err := reader.body.Read(buffer)
+		reader.remaining -= int64(count)
+		if err == io.EOF && reader.remaining > 0 {
+			return count, io.ErrUnexpectedEOF
+		}
+		return count, err
+	}
+	var probe [1]byte
+	count, err := reader.body.Read(probe[:])
+	if count > 0 {
+		return 0, fmt.Errorf("%w: attachment exceeds approval metadata size", domain.ErrUpstream)
+	}
+	return 0, err
+}
+
+func (reader *expectedSizeReadCloser) Close() error {
+	return reader.body.Close()
 }
 
 type releaseReadCloser struct {

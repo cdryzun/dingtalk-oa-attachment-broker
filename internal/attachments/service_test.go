@@ -223,6 +223,65 @@ func TestDownloadReturnsStreamWithoutExposingSignedURL(t *testing.T) {
 	}
 }
 
+func TestDownloadEnforcesApprovalAttachmentSize(t *testing.T) {
+	testCases := []struct {
+		name          string
+		body          string
+		contentLength int64
+		wantReadError error
+		wantOpenError error
+	}{
+		{name: "short unknown-length stream", body: "123", contentLength: -1, wantReadError: io.ErrUnexpectedEOF},
+		{name: "long unknown-length stream", body: "123456", contentLength: -1, wantReadError: domain.ErrUpstream},
+		{name: "declared length mismatch", body: "123", contentLength: 3, wantOpenError: domain.ErrUpstream},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			approval := testApproval()
+			approval.Attachments[0].FileSize = 5
+			body := &trackingBody{Reader: strings.NewReader(testCase.body)}
+			service := NewService(Options{
+				Approvals: &fakeApprovalProvider{
+					approval:    approval,
+					downloadURL: mustURL(t, "https://download.example.test/signed"),
+				},
+				Downloader: &fakeDownloader{response: &Download{
+					Body:          body,
+					ContentLength: testCase.contentLength,
+				}},
+				Audit:               &recordingAuditRepository{},
+				DownloadConcurrency: 1,
+				Now:                 fixedNow,
+			})
+
+			download, err := service.Download(
+				context.Background(),
+				domain.User{CorpID: "corp-id", UserID: "approver"},
+				"instance-id",
+				"file-id",
+				"request-id",
+			)
+			if testCase.wantOpenError != nil {
+				if !errors.Is(err, testCase.wantOpenError) || !body.closed {
+					t.Fatalf("Download() error = %v, body closed = %v", err, body.closed)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Download() error = %v", err)
+			}
+			defer download.Body.Close()
+			if download.ContentLength != 5 {
+				t.Errorf("ContentLength = %d; want 5", download.ContentLength)
+			}
+			_, readErr := io.ReadAll(download.Body)
+			if !errors.Is(readErr, testCase.wantReadError) {
+				t.Errorf("ReadAll() error = %v; want %v", readErr, testCase.wantReadError)
+			}
+		})
+	}
+}
+
 func TestDownloadConcurrencyIsLimitedPerUser(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
