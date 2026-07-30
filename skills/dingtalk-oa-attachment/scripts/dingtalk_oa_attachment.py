@@ -1017,7 +1017,10 @@ def command_download(
         ) from None
     finally:
         if temp_path is not None:
-            temp_path.unlink(missing_ok=True)
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
 
 def _decode_json_response(response: Any) -> Dict[str, Any]:

@@ -1079,9 +1079,11 @@ def test_download_rejects_invalid_stream_and_cleans_temporary_file(
     assert list(tmp_path.glob("*.partial")) == []
 
 
+@pytest.mark.parametrize("cleanup_fails", [False, True])
 def test_download_rejects_interrupted_unknown_length_stream(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    cleanup_fails: bool,
 ) -> None:
     class BinaryHeaders:
         def get_content_type(self) -> str:
@@ -1110,6 +1112,17 @@ def test_download_rejects_interrupted_unknown_length_stream(
                 return b"partial"
             raise http.client.IncompleteRead(b"")
 
+    real_unlink = Path.unlink
+    if cleanup_fails:
+
+        def fail_partial_cleanup(path: Path, *args: Any, **kwargs: Any) -> None:
+            del args, kwargs
+            if path.suffix == ".partial":
+                raise OSError("cleanup failed")
+            real_unlink(path)
+
+        monkeypatch.setattr(Path, "unlink", fail_partial_cleanup)
+
     client = CLIENT.BrokerClient(
         "https://broker.example.test",
         MemoryStore("access-new-secret", "refresh-new-secret"),
@@ -1128,7 +1141,12 @@ def test_download_rejects_interrupted_unknown_length_stream(
 
     assert captured.value.code == "download_failed"
     assert not destination.exists()
-    assert list(tmp_path.glob("*.partial")) == []
+    partials = list(tmp_path.glob("*.partial"))
+    if cleanup_fails:
+        assert len(partials) == 1
+        real_unlink(partials[0])
+    else:
+        assert partials == []
 
 
 def test_download_refuses_overwrite_without_contacting_broker(
