@@ -21,6 +21,7 @@ func TestNewAppliesConfiguration(t *testing.T) {
 		ReadTimeout:       12 * time.Second,
 		IdleTimeout:       30 * time.Second,
 		ShutdownTimeout:   8 * time.Second,
+		DownloadTimeout:   10 * time.Minute,
 	}
 	handler := http.NewServeMux()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -41,6 +42,9 @@ func TestNewAppliesConfiguration(t *testing.T) {
 	}
 	if got.IdleTimeout != cfg.IdleTimeout {
 		t.Errorf("IdleTimeout = %s; want %s", got.IdleTimeout, cfg.IdleTimeout)
+	}
+	if got.WriteTimeout != cfg.DownloadTimeout {
+		t.Errorf("WriteTimeout = %s; want %s", got.WriteTimeout, cfg.DownloadTimeout)
 	}
 }
 
