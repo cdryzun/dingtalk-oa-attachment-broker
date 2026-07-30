@@ -34,7 +34,7 @@ MAX_ERROR_BYTES = 65_536
 MAX_JSON_RESPONSE_BYTES = 4 * 1024 * 1024
 MAX_KEYWORD_CHARACTERS = 100
 MAX_CATEGORY_DISCOVERY_PAGES = 100
-DEFAULT_TIMEOUT_SECONDS = 30.0
+DEFAULT_TIMEOUT_SECONDS = 300.0
 MAX_RETRY_AFTER_SECONDS = 3_600
 IS_WINDOWS = os.name == "nt"
 
@@ -1341,6 +1341,12 @@ def build_parser() -> argparse.ArgumentParser:
             f"{CREDENTIAL_FILE_ENV} or the Skill-local runtime file."
         ),
     )
+    parser.add_argument(
+        "--request-timeout",
+        type=float,
+        default=DEFAULT_TIMEOUT_SECONDS,
+        help="Broker request timeout in seconds between 1 and 600 (default: 300).",
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     login_parser = subparsers.add_parser(
@@ -1439,6 +1445,11 @@ def main(argv: Optional[list[str]] = None) -> int:
                 "invalid_timeout",
                 "Login timeout must be between 1 and 600 seconds.",
             )
+        if not 1 <= arguments.request_timeout <= 600:
+            raise ClientError(
+                "invalid_request_timeout",
+                "Request timeout must be between 1 and 600 seconds.",
+            )
         broker_url = validate_broker_url(arguments.broker_url)
         if arguments.credential_file is None:
             store = select_credential_store(broker_url)
@@ -1447,7 +1458,11 @@ def main(argv: Optional[list[str]] = None) -> int:
                 broker_url,
                 arguments.credential_file,
             )
-        client = BrokerClient(broker_url, store)
+        client = BrokerClient(
+            broker_url,
+            store,
+            timeout=arguments.request_timeout,
+        )
 
         if arguments.command == "login":
             command_login(

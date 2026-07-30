@@ -61,6 +61,11 @@ The default credential file is `.runtime/auth.json` inside this Skill. Set
 before the command to share one per-user cache across separate Skill copies.
 The configured path must be absolute.
 
+Broker requests default to a 300-second timeout so cold category discovery and
+bounded approval-detail batches can finish. Pass global `--request-timeout`
+with a value from 1 to 600 before the command when the deployment requires a
+different deadline.
+
 This JSON file is local plaintext state. Never copy it between users or place
 it in Git, cloud sync, a network share, or another shared directory. On Unix,
 the client creates mode `0700` directories and a mode `0600` file. On Windows,

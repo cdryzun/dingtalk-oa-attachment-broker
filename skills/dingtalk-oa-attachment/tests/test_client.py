@@ -1446,6 +1446,19 @@ def test_main_lists_attachments_with_cached_session(
 ) -> None:
     with fixture_server() as (origin, _):
         store = MemoryStore("access-device-secret", "refresh-device-secret")
+        client_type = CLIENT.BrokerClient
+        captured_timeout: list[float] = []
+
+        def create_client(
+            broker_url: str,
+            selected_store: MemoryStore,
+            *,
+            timeout: float,
+        ) -> Any:
+            captured_timeout.append(timeout)
+            return client_type(broker_url, selected_store, timeout=timeout)
+
+        monkeypatch.setattr(CLIENT, "BrokerClient", create_client)
         monkeypatch.setattr(
             CLIENT,
             "select_credential_store",
@@ -1456,6 +1469,8 @@ def test_main_lists_attachments_with_cached_session(
             [
                 "--broker-url",
                 origin,
+                "--request-timeout",
+                "180",
                 "list",
                 "--process-instance-id",
                 "process-one",
@@ -1463,9 +1478,27 @@ def test_main_lists_attachments_with_cached_session(
         )
 
     assert exit_code == 0
+    assert captured_timeout == [180.0]
     result = json.loads(capsys.readouterr().out)
     assert result["ok"] is True
     assert result["data"]["attachments"][0]["fileId"] == "file-one"
+
+
+def test_main_rejects_out_of_range_request_timeout(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    exit_code = CLIENT.main(
+        [
+            "--broker-url",
+            "http://127.0.0.1:1",
+            "--request-timeout",
+            "0",
+            "auth-status",
+        ]
+    )
+
+    assert exit_code == 1
+    assert json.loads(capsys.readouterr().err)["code"] == "invalid_request_timeout"
 
 
 def test_main_my_categories_follows_bounded_pages(
