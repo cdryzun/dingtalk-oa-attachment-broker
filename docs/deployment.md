@@ -40,17 +40,38 @@ directly to the Broker.
   pepper.
 - The CIDRs of reverse proxies that may supply `X-Forwarded-For`, when needed.
 
-## Build the Image
+## Select or Build the Image
 
-The root Dockerfile produces a scratch image containing `/server` and
-`/migrate`:
+Every successful `main` workflow publishes a scratch image for `linux/amd64`
+and `linux/arm64`. For a repeatable deployment, select the immutable tag for the
+commit being deployed:
+
+GHCR creates a package as private on its first publication. After that first
+workflow succeeds, the repository owner must open the
+[package settings](https://github.com/users/cdryzun/packages/container/dingtalk-oa-attachment-broker/settings)
+and change its visibility to **Public**. The release is not complete until a
+clean, unauthenticated Docker client can inspect the manifest.
+
+```bash
+export BROKER_IMAGE="ghcr.io/cdryzun/dingtalk-oa-attachment-broker:sha-<commit>"
+
+docker manifest inspect "${BROKER_IMAGE}" >/dev/null
+
+docker pull "${BROKER_IMAGE}"
+docker image inspect --format '{{index .RepoDigests 0}}' "${BROKER_IMAGE}"
+```
+
+Replace `<commit>` with the full 40-character Git commit SHA. Record and deploy
+the registry-resolved digest. Do not deploy the mutable `latest` tag.
+
+To build the same scratch image locally instead:
 
 ```bash
 docker build --pull --tag dingtalk-oa-attachment-broker:local .
+export BROKER_IMAGE="dingtalk-oa-attachment-broker:local"
 ```
 
-For repeatable production releases, tag the image with a commit SHA and record
-the registry-resolved digest. Do not deploy a mutable `latest` tag.
+The image contains `/server` and `/migrate` and runs as UID/GID `65532`.
 
 ## Configure Secrets
 
@@ -91,7 +112,7 @@ revision:
 docker run --rm \
   --env-file broker.env \
   --entrypoint /migrate \
-  dingtalk-oa-attachment-broker:local
+  "${BROKER_IMAGE}"
 ```
 
 The migration binary reads only `DATABASE_URL`, embeds forward-only SQL,
@@ -113,7 +134,7 @@ docker run --rm \
   --read-only \
   --cap-drop ALL \
   --security-opt no-new-privileges \
-  dingtalk-oa-attachment-broker:local
+  "${BROKER_IMAGE}"
 ```
 
 The image runs as UID and GID `65532`. The process needs no writable root

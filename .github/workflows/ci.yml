@@ -1,6 +1,7 @@
 name: CI
 
 on:
+  workflow_dispatch:
   pull_request:
   push:
     branches:
@@ -119,3 +120,54 @@ jobs:
         run: |
           user="$(docker image inspect --format '{{.Config.User}}' dingtalk-oa-attachment-broker:test)"
           test "${user}" = "65532:65532"
+      - name: Verify multi-platform image
+        run: |
+          docker buildx create --driver docker-container --name broker-ci --use
+          docker buildx build \
+            --pull \
+            --platform linux/amd64,linux/arm64 \
+            --output type=oci,dest=/tmp/broker-image.tar \
+            .
+
+  publish:
+    name: Publish image
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs:
+      - go
+      - skill
+      - docs
+      - container
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Log in to GHCR
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "${GHCR_TOKEN}" | docker login ghcr.io \
+            --username "${GITHUB_ACTOR}" \
+            --password-stdin
+      - name: Build and push image
+        env:
+          IMAGE: ghcr.io/cdryzun/dingtalk-oa-attachment-broker
+        run: |
+          docker buildx create --driver docker-container --name broker-publish --use
+          docker buildx build \
+            --pull \
+            --platform linux/amd64,linux/arm64 \
+            --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --label "org.opencontainers.image.licenses=Apache-2.0" \
+            --provenance=mode=max \
+            --sbom=true \
+            --tag "${IMAGE}:sha-${GITHUB_SHA}" \
+            --tag "${IMAGE}:latest" \
+            --push \
+            .
+          docker buildx imagetools inspect "${IMAGE}:sha-${GITHUB_SHA}"
+      - name: Log out of GHCR
+        if: always()
+        run: docker logout ghcr.io
