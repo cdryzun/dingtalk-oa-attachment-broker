@@ -46,8 +46,16 @@ Every successful `main` workflow publishes a scratch image for `linux/amd64`
 and `linux/arm64`. For a repeatable deployment, select the immutable tag for the
 commit being deployed:
 
+GHCR creates a package as private on its first publication. After that first
+workflow succeeds, the repository owner must open the
+[package settings](https://github.com/users/cdryzun/packages/container/dingtalk-oa-attachment-broker/settings)
+and change its visibility to **Public**. The release is not complete until a
+clean, unauthenticated Docker client can inspect the manifest.
+
 ```bash
 export BROKER_IMAGE="ghcr.io/cdryzun/dingtalk-oa-attachment-broker:sha-<commit>"
+
+docker manifest inspect "${BROKER_IMAGE}" >/dev/null
 
 docker pull "${BROKER_IMAGE}"
 docker image inspect --format '{{index .RepoDigests 0}}' "${BROKER_IMAGE}"

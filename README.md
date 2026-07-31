@@ -106,6 +106,10 @@ ghcr.io/cdryzun/dingtalk-oa-attachment-broker:sha-<40-character-commit>
 ghcr.io/cdryzun/dingtalk-oa-attachment-broker:latest
 ```
 
+GHCR creates the package as private on its first publication. The repository
+owner must change the package visibility to public before announcing the image;
+see [Deployment](docs/deployment.md).
+
 Use the immutable `sha-<commit>` tag or its registry digest for deployment.
 Reserve `latest` for evaluation only. See [Deployment](docs/deployment.md) for
 migration, runtime hardening, and health verification.
