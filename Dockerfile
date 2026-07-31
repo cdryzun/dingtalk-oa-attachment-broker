@@ -1,4 +1,7 @@
-FROM golang:1.25.12-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.25.12-alpine AS build
+
+ARG TARGETOS
+ARG TARGETARCH
 
 RUN apk add --no-cache ca-certificates
 
@@ -10,12 +13,12 @@ RUN go mod download && go mod verify
 COPY cmd ./cmd
 COPY internal ./internal
 
-RUN CGO_ENABLED=0 GOOS=linux go build \
+RUN CGO_ENABLED=0 GOOS="${TARGETOS}" GOARCH="${TARGETARCH}" go build \
     -trimpath \
     -ldflags="-s -w" \
     -o /out/server \
     ./cmd/server && \
-    CGO_ENABLED=0 GOOS=linux go build \
+    CGO_ENABLED=0 GOOS="${TARGETOS}" GOARCH="${TARGETARCH}" go build \
     -trimpath \
     -ldflags="-s -w" \
     -o /out/migrate \

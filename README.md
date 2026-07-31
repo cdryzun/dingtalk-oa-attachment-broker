@@ -96,6 +96,20 @@ curl --fail --silent http://127.0.0.1:9090/metrics
 Loopback HTTP is accepted only for local callback testing. Every non-loopback
 `PUBLIC_BASE_URL` must use HTTPS.
 
+## Container Image
+
+Every successful `main` build publishes a multi-platform image for
+`linux/amd64` and `linux/arm64`:
+
+```text
+ghcr.io/cdryzun/dingtalk-oa-attachment-broker:sha-<40-character-commit>
+ghcr.io/cdryzun/dingtalk-oa-attachment-broker:latest
+```
+
+Use the immutable `sha-<commit>` tag or its registry digest for deployment.
+Reserve `latest` for evaluation only. See [Deployment](docs/deployment.md) for
+migration, runtime hardening, and health verification.
+
 ## Agent and CLI Client
 
 The bundled Skill requires the operator-provided Broker origin. It has no public
