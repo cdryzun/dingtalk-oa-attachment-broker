@@ -345,6 +345,28 @@ func TestApprovalMapsParticipantsAndAttachments(t *testing.T) {
 	}
 }
 
+func TestNormalizeApprovalTimestampAcceptsMinutePrecision(t *testing.T) {
+	testCases := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "UTC", input: "2026-07-18T08:00Z", want: "2026-07-18T08:00:00Z"},
+		{name: "offset", input: "2026-07-18T16:00+08:00", want: "2026-07-18T08:00:00Z"},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			got, err := normalizeApprovalTimestamp("createTime", testCase.input)
+			if err != nil {
+				t.Fatalf("normalizeApprovalTimestamp() error = %v", err)
+			}
+			if got != testCase.want {
+				t.Errorf("normalizeApprovalTimestamp() = %q; want %q", got, testCase.want)
+			}
+		})
+	}
+}
+
 func TestListVisibleApprovalTemplatesMapsDirectoryMetadata(t *testing.T) {
 	workflowAPI := &fakeWorkflowAPI{
 		visibleTemplatesResponse: &workflow.ListUserVisibleBpmsProcessesResponse{

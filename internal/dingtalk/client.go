@@ -25,8 +25,9 @@ import (
 )
 
 const (
-	appTokenRefreshBefore = 5 * time.Minute
-	maxOAPIResponseBytes  = 1 << 20
+	appTokenRefreshBefore         = 5 * time.Minute
+	maxOAPIResponseBytes          = 1 << 20
+	dingTalkMinuteTimestampLayout = "2006-01-02T15:04Z07:00"
 )
 
 type oauthAPI interface {
@@ -673,6 +674,9 @@ func normalizeApprovalTimestamp(field string, timestamp string) (string, error) 
 		return "", nil
 	}
 	parsed, err := time.Parse(time.RFC3339, timestamp)
+	if err != nil {
+		parsed, err = time.Parse(dingTalkMinuteTimestampLayout, timestamp)
+	}
 	if err != nil {
 		return "", fmt.Errorf("%w: DingTalk approval %s is invalid", domain.ErrUpstream, field)
 	}
